@@ -3,10 +3,41 @@ import Anthropic from '@anthropic-ai/sdk'
 import slugify from 'slugify'
 import { savePost } from '@/lib/posts'
 import type { GenerateRequest } from '@/types'
+import { readFileSync } from 'fs'
+import path from 'path'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+// Manually parse .env.local using an absolute path anchored to this file's location.
+// This bypasses Turbopack's incorrect workspace-root detection caused by a stray
+// package-lock.json in the parent directory.
+// In Turbopack dev, __dirname is a virtual path. Walk up from process.cwd()
+// (which Next.js sets to the detected workspace root) to find .env.local.
+let envPath = ''
+let dir = process.cwd()
+for (let i = 0; i < 6; i++) {
+  const candidate = path.join(dir, '.env.local')
+  try { readFileSync(candidate); envPath = candidate; break } catch { /* keep walking */ }
+  const parent = path.dirname(dir)
+  if (parent === dir) break
+  dir = parent
+}
+try {
+  const lines = readFileSync(envPath, 'utf8').split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx === -1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    const val = trimmed.slice(eqIdx + 1).trim()
+    // Force-set: override empty values set by any interceptor (e.g. vestauth)
+    if (key && val && !process.env[key]) process.env[key] = val
+  }
+} catch {
+  // In production env vars are injected by Vercel — file won't exist
+}
 
 export async function POST(req: NextRequest) {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
   try {
     const body: GenerateRequest = await req.json()
 
