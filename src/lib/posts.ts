@@ -3,7 +3,7 @@ import type { Post } from '@/types'
 
 export async function getPublishedPosts(): Promise<Post[]> {
   const { data, error } = await supabase()
-    .from('posts')
+    .from('gaveho_posts')
     .select('*')
     .eq('published', true)
     .order('created_at', { ascending: false })
@@ -14,7 +14,7 @@ export async function getPublishedPosts(): Promise<Post[]> {
 
 export async function getPostBySlug(slug: string): Promise<Post | null> {
   const { data, error } = await supabase()
-    .from('posts')
+    .from('gaveho_posts')
     .select('*')
     .eq('slug', slug)
     .eq('published', true)
@@ -27,7 +27,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 export async function savePost(post: Omit<Post, 'id' | 'created_at' | 'updated_at'>): Promise<Post> {
   const admin = supabaseAdmin()
   const { data, error } = await admin
-    .from('posts')
+    .from('gaveho_posts')
     .insert(post)
     .select()
     .single()
@@ -39,7 +39,7 @@ export async function savePost(post: Omit<Post, 'id' | 'created_at' | 'updated_a
 export async function updatePost(id: string, updates: Partial<Post>): Promise<Post> {
   const admin = supabaseAdmin()
   const { data, error } = await admin
-    .from('posts')
+    .from('gaveho_posts')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()

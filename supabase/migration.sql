@@ -1,6 +1,6 @@
 -- Run this in your Supabase SQL editor
 
-create table if not exists posts (
+create table if not exists gaveho_posts (
   id          uuid primary key default gen_random_uuid(),
   title       text not null,
   slug        text not null unique,
@@ -15,15 +15,15 @@ create table if not exists posts (
 );
 
 -- Index for slug lookups
-create index if not exists posts_slug_idx on posts(slug);
+create index if not exists gaveho_posts_slug_idx on gaveho_posts(slug);
 -- Index for published feed
-create index if not exists posts_published_idx on posts(published, created_at desc);
+create index if not exists gaveho_posts_published_idx on gaveho_posts(published, created_at desc);
 
 -- RLS: public can read published posts
-alter table posts enable row level security;
+alter table gaveho_posts enable row level security;
 
 create policy "Public can read published posts"
-  on posts for select
+  on gaveho_posts for select
   using (published = true);
 
 -- Service role can do everything (used by the AI agent via supabaseAdmin)
