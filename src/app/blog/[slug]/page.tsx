@@ -65,10 +65,19 @@ export default async function PostPage({
 
       {/* Content */}
       <div className="prose prose-neutral dark:prose-invert max-w-none
-        prose-headings:font-semibold prose-headings:tracking-tight
-        prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-        prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-        prose-pre:bg-muted prose-pre:border prose-pre:border-border">
+        prose-headings:font-semibold prose-headings:tracking-tight prose-headings:scroll-mt-20
+        prose-p:leading-relaxed prose-p:text-foreground/90
+        prose-a:text-primary prose-a:no-underline prose-a:font-medium hover:prose-a:underline
+        prose-strong:text-foreground prose-strong:font-semibold
+        prose-blockquote:border-l-primary/40 prose-blockquote:text-muted-foreground prose-blockquote:not-italic
+        prose-code:before:content-none prose-code:after:content-none
+        prose-code:bg-zinc-900 prose-code:text-emerald-300 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-[0.85em] prose-code:font-mono prose-code:font-normal
+        prose-pre:bg-zinc-950 prose-pre:border prose-pre:border-zinc-800 prose-pre:rounded-lg prose-pre:shadow-md
+        prose-pre:text-zinc-100
+        [&_pre_code]:bg-transparent [&_pre_code]:text-zinc-100 [&_pre_code]:p-0
+        prose-hr:border-border
+        prose-li:text-foreground/90
+        prose-img:rounded-lg prose-img:shadow-sm">
         <MDXRemote source={post.content} />
       </div>
     </article>

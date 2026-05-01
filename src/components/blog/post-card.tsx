@@ -6,25 +6,25 @@ import type { Post } from '@/types'
 
 export function PostCard({ post }: { post: Post }) {
   return (
-    <Link href={`/blog/${post.slug}`}>
-      <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-        <CardHeader className="pb-2">
-          <div className="flex flex-wrap gap-1 mb-2">
+    <Link href={`/blog/${post.slug}`} className="group block h-full">
+      <Card className="group-hover:shadow-lg group-hover:border-border/80 transition-all duration-200 cursor-pointer h-full flex flex-col">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap gap-1 mb-3">
             {post.tags?.slice(0, 3).map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-xs">
+              <Badge key={tag} variant="secondary" className="text-xs font-normal">
                 {tag}
               </Badge>
             ))}
           </div>
-          <h2 className="text-xl font-semibold leading-tight hover:text-primary transition-colors">
+          <h2 className="text-lg font-semibold leading-snug group-hover:text-primary transition-colors duration-150">
             {post.title}
           </h2>
         </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm leading-relaxed mb-3">
+        <CardContent className="flex flex-col flex-1 justify-between gap-4">
+          <p className="text-muted-foreground text-sm leading-relaxed line-clamp-3">
             {post.excerpt}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground/70 tabular-nums">
             {formatDate(post.created_at)}
           </p>
         </CardContent>
