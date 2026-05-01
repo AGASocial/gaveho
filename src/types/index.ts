@@ -1,3 +1,5 @@
+export type Language = 'en' | 'es'
+
 export interface Post {
   id: string
   title: string
@@ -10,12 +12,14 @@ export interface Post {
   tags: string[]
   tiktok_script?: string
   cover_image?: string
+  language: Language
 }
 
 export interface GenerateRequest {
   topic: string
   context?: string
   secret: string
+  language?: Language
 }
 
 export interface GenerateResponse {

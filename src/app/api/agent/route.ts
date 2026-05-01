@@ -46,9 +46,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { topic, context } = body
+    const { topic, context, language = 'en' } = body
+    const isSpanish = language === 'es'
 
-    const systemPrompt = `You are Gabriel Vega's personal content writer.
+    const systemPrompt = isSpanish
+      ? `Eres el escritor de contenido personal de Gabriel Vega.
+Gabriel es un Ingeniero de Software Senior con más de 12 años de experiencia en desarrollo full-stack,
+IA conversacional, fintech y arquitecturas cloud. Ha trabajado en Snapchat, Backbase y 84.51°.
+Desarrolla con Next.js, TypeScript, Angular, Node.js, Supabase y OpenAI.
+Escribe en primera persona, de forma directa y práctica — como un ingeniero senior compartiendo experiencia real,
+no un blog corporativo. Sé perspicaz, ocasionalmente opinado y siempre accionable. Escribe TODO en español.`
+      : `You are Gabriel Vega's personal content writer.
 Gabriel is a Senior Software Engineer with 12+ years of experience in full-stack development,
 conversational AI, fintech, and cloud architectures. He has worked at Snapchat, Backbase, and 84.51°.
 He builds with Next.js, TypeScript, Angular, Node.js, Supabase, and OpenAI.
@@ -89,6 +97,7 @@ Return ONLY a valid JSON object with this exact shape:
       content: generated.content,
       tags: generated.tags,
       tiktok_script: generated.tiktok_script,
+      language,
       published: false, // always draft first — you review before publishing
     })
 

@@ -1,13 +1,16 @@
 import { supabase, supabaseAdmin } from './supabase'
-import type { Post } from '@/types'
+import type { Post, Language } from '@/types'
 
-export async function getPublishedPosts(): Promise<Post[]> {
-  const { data, error } = await supabase()
+export async function getPublishedPosts(language?: Language): Promise<Post[]> {
+  let query = supabase()
     .from('gaveho_posts')
     .select('*')
     .eq('published', true)
     .order('created_at', { ascending: false })
 
+  if (language) query = query.eq('language', language)
+
+  const { data, error } = await query
   if (error) throw error
   return data ?? []
 }
