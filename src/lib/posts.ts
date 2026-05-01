@@ -12,14 +12,15 @@ export async function getPublishedPosts(): Promise<Post[]> {
   return data ?? []
 }
 
-export async function getPostBySlug(slug: string): Promise<Post | null> {
-  const { data, error } = await supabase()
+export async function getPostBySlug(slug: string, preview = false): Promise<Post | null> {
+  let query = supabase()
     .from('gaveho_posts')
     .select('*')
     .eq('slug', slug)
-    .eq('published', true)
-    .single()
 
+  if (!preview) query = query.eq('published', true)
+
+  const { data, error } = await query.single()
   if (error) return null
   return data
 }

@@ -6,7 +6,6 @@ import { formatDate } from '@/lib/utils'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import type { Metadata } from 'next'
 
-// Fully dynamic — posts are fetched at request time, revalidated every 60s
 export const dynamic = 'force-dynamic'
 export const revalidate = 60
 
@@ -26,15 +25,28 @@ export async function generateMetadata({
 
 export default async function PostPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ preview?: string }>
 }) {
   const { slug } = await params
-  const post = await getPostBySlug(slug)
+  const { preview } = await searchParams
+
+  const isPreview = preview === process.env.AGENT_SECRET
+
+  const post = await getPostBySlug(slug, isPreview)
   if (!post) notFound()
 
   return (
     <article className="space-y-8">
+      {/* Draft banner */}
+      {!post.published && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-2 rounded-md">
+          📝 <strong>Draft</strong> — this post is not published yet.
+        </div>
+      )}
+
       {/* Header */}
       <div className="space-y-4">
         <div className="flex flex-wrap gap-1">

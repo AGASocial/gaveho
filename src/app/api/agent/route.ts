@@ -99,7 +99,7 @@ Return ONLY a valid JSON object with this exact shape:
         title: post.title,
         slug: post.slug,
         tiktok_script: post.tiktok_script,
-        preview_url: `${process.env.NEXT_PUBLIC_SITE_URL}/blog/${post.slug}`,
+        preview_url: `${process.env.NEXT_PUBLIC_SITE_URL}/blog/${post.slug}?preview=${process.env.AGENT_SECRET}`,
       },
     })
   } catch (err) {
