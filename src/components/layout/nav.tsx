@@ -12,32 +12,36 @@ export function Nav() {
   const pathname = usePathname()
 
   return (
-    <header className="border-b border-border/40 bg-background/95 backdrop-blur sticky top-0 z-50">
-      <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
-        <Link href="/" className="font-semibold text-lg tracking-tight">
-          gaveho<span className="text-primary">.</span>
+    <header className="border-b border-border/50 bg-background/90 backdrop-blur-md sticky top-0 z-50">
+      <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+        <Link href="/" className="font-bold text-base tracking-tight flex items-center gap-0.5">
+          <span>gaveho</span>
+          <span className="text-primary text-lg leading-none">.</span>
         </Link>
-        <nav className="flex items-center gap-6 text-sm">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={
-                pathname === l.href
-                  ? 'text-foreground font-medium'
-                  : 'text-muted-foreground hover:text-foreground transition-colors'
-              }
-            >
-              {l.label}
-            </Link>
-          ))}
+        <nav className="flex items-center gap-1 text-sm">
+          {links.map((l) => {
+            const active = pathname === l.href || (l.href !== '/' && pathname.startsWith(l.href))
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`px-3 py-1.5 rounded-md transition-colors ${
+                  active
+                    ? 'text-foreground font-medium bg-accent'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                }`}
+              >
+                {l.label}
+              </Link>
+            )
+          })}
           <a
             href="https://www.linkedin.com/in/gaveho/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors ml-1"
           >
-            LinkedIn
+            LinkedIn ↗
           </a>
         </nav>
       </div>

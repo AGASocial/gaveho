@@ -25,21 +25,23 @@ export default async function BlogPage({
 
   return (
     <div className="space-y-10">
-      <div className="space-y-4">
-        <h1 className="text-3xl font-bold tracking-tight">Blog</h1>
-        <p className="text-muted-foreground">
-          Thoughts on AI, TypeScript, full-stack engineering, and things I&apos;m building.
-        </p>
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold tracking-tight">Blog</h1>
+          <p className="text-muted-foreground leading-relaxed">
+            Thoughts on AI, TypeScript, full-stack engineering, and things I&apos;m building.
+          </p>
+        </div>
 
         {/* Language toggle */}
-        <div className="flex gap-2 text-sm">
+        <div className="flex gap-1.5 text-sm">
           <Link
             href="/blog"
             className={cn(
-              'px-3 py-1 rounded-full border transition-colors',
+              'px-3 py-1.5 rounded-lg border transition-colors font-medium',
               !language
                 ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground'
+                : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
             )}
           >
             All
@@ -47,10 +49,10 @@ export default async function BlogPage({
           <Link
             href="/blog?lang=en"
             className={cn(
-              'px-3 py-1 rounded-full border transition-colors',
+              'px-3 py-1.5 rounded-lg border transition-colors font-medium',
               language === 'en'
                 ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground'
+                : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
             )}
           >
             🇺🇸 English
@@ -58,10 +60,10 @@ export default async function BlogPage({
           <Link
             href="/blog?lang=es"
             className={cn(
-              'px-3 py-1 rounded-full border transition-colors',
+              'px-3 py-1.5 rounded-lg border transition-colors font-medium',
               language === 'es'
                 ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground'
+                : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
             )}
           >
             🇪🇸 Español
@@ -70,11 +72,13 @@ export default async function BlogPage({
       </div>
 
       {posts.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          {language === 'es' ? 'No hay artículos aún — vuelve pronto.' : 'No posts yet — check back soon.'}
-        </p>
+        <div className="py-16 text-center space-y-2">
+          <p className="text-muted-foreground text-sm">
+            {language === 'es' ? 'No hay artículos aún — vuelve pronto.' : 'No posts yet — check back soon.'}
+          </p>
+        </div>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           {posts.map((post) => (
             <PostCard key={post.id} post={post} />
           ))}

@@ -22,12 +22,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className="antialiased bg-background text-foreground min-h-full flex flex-col">
         <Nav />
-        <main className="max-w-3xl mx-auto px-4 py-10 w-full flex-1">
+        <main className="max-w-4xl mx-auto px-6 py-12 w-full flex-1">
           {children}
         </main>
-        <footer className="border-t border-border/40 mt-20">
-          <div className="max-w-3xl mx-auto px-4 py-6 text-xs text-muted-foreground text-center">
-            © {new Date().getFullYear()} Gabriel Vega · Built with Next.js & deployed on Vercel
+        <footer className="border-t border-border/40 mt-24">
+          <div className="max-w-4xl mx-auto px-6 py-6 text-xs text-muted-foreground flex items-center justify-between gap-4">
+            <span>© {new Date().getFullYear()} Gabriel Vega</span>
+            <span className="text-muted-foreground/50">Built with Next.js · Deployed on Vercel</span>
           </div>
         </footer>
       </body>
