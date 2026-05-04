@@ -28,20 +28,20 @@ export default async function BlogPage({
       <div className="space-y-5">
         <div className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">Blog</h1>
-          <p className="text-muted-foreground leading-relaxed">
-            Thoughts on AI, TypeScript, full-stack engineering, and things I&apos;m building.
+          <p className="text-muted-foreground leading-relaxed max-w-xl">
+            Thoughts, technical deep dives, and reflections on building software with minimal friction and maximum intent.
           </p>
         </div>
 
         {/* Language toggle */}
-        <div className="flex gap-1.5 text-sm">
+        <div className="flex gap-2 text-xs">
           <Link
             href="/blog"
             className={cn(
-              'px-3 py-1.5 rounded-lg border transition-colors font-medium',
+              'px-4 py-2 border transition-colors font-semibold uppercase tracking-wide',
               !language
                 ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/40'
             )}
           >
             All
@@ -49,10 +49,10 @@ export default async function BlogPage({
           <Link
             href="/blog?lang=en"
             className={cn(
-              'px-3 py-1.5 rounded-lg border transition-colors font-medium',
+              'px-4 py-2 border transition-colors font-semibold uppercase tracking-wide',
               language === 'en'
                 ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/40'
             )}
           >
             🇺🇸 English
@@ -60,10 +60,10 @@ export default async function BlogPage({
           <Link
             href="/blog?lang=es"
             className={cn(
-              'px-3 py-1.5 rounded-lg border transition-colors font-medium',
+              'px-4 py-2 border transition-colors font-semibold uppercase tracking-wide',
               language === 'es'
                 ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/40'
             )}
           >
             🇪🇸 Español

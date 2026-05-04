@@ -14,21 +14,20 @@ export function Nav() {
   return (
     <header className="border-b border-border/50 bg-background/90 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="font-bold text-base tracking-tight flex items-center gap-0.5">
-          <span>gaveho</span>
-          <span className="text-primary text-lg leading-none">.</span>
+        <Link href="/" className="font-bold text-base tracking-tight">
+          gaveho<span className="text-foreground">.</span>
         </Link>
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="flex items-center gap-6 text-sm">
           {links.map((l) => {
             const active = pathname === l.href || (l.href !== '/' && pathname.startsWith(l.href))
             return (
               <Link
                 key={l.href}
                 href={l.href}
-                className={`px-3 py-1.5 rounded-md transition-colors ${
+                className={`pb-0.5 transition-colors tracking-wide text-xs font-medium uppercase ${
                   active
-                    ? 'text-foreground font-medium bg-accent'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    ? 'text-foreground border-b-2 border-foreground'
+                    : 'text-muted-foreground hover:text-foreground border-b-2 border-transparent'
                 }`}
               >
                 {l.label}
@@ -39,9 +38,9 @@ export function Nav() {
             href="https://www.linkedin.com/in/gaveho/"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors ml-1"
+            className="pb-0.5 transition-colors tracking-wide text-xs font-medium uppercase text-muted-foreground hover:text-foreground border-b-2 border-transparent"
           >
-            LinkedIn ↗
+            LinkedIn
           </a>
         </nav>
       </div>

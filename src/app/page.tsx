@@ -1,10 +1,9 @@
 import Link from 'next/link'
-import { Badge } from '@/components/ui/badge'
 
 const skillGroups = [
-  { label: 'Frontend', skills: ['TypeScript', 'Next.js', 'Angular', 'React'] },
-  { label: 'Backend', skills: ['Node.js', 'Supabase', 'GCP', 'Azure', 'Docker'] },
-  { label: 'AI', skills: ['OpenAI', 'Claude', 'RAG', 'LangChain'] },
+  { label: 'Frontend', skills: ['TypeScript', 'Next.js', 'Angular', 'React', 'Tailwind CSS'] },
+  { label: 'Backend', skills: ['Node.js', 'Supabase', 'PostgreSQL', 'Docker', 'GCP', 'Azure'] },
+  { label: 'AI & Cloud', skills: ['OpenAI', 'Claude', 'RAG', 'LangChain', 'Vercel'] },
 ]
 
 const projects = [
@@ -20,7 +19,7 @@ const projects = [
     url: '#',
     description: 'Chat with your files (PDF, DOCX, CSV, images) using RAG and OpenAI models.',
     tags: ['Next.js', 'RAG', 'OpenAI', 'Supabase'],
-    status: 'In progress',
+    status: 'In Progress',
   },
 ]
 
@@ -38,25 +37,24 @@ export default function Home() {
       {/* Hero */}
       <section className="pt-6 space-y-6">
         {/* Avatar */}
-        <div className="w-14 h-14 rounded-2xl bg-foreground text-background flex items-center justify-center text-xl font-bold tracking-tight select-none">
+        <div className="w-14 h-14 bg-muted border border-border flex items-center justify-center text-sm font-semibold tracking-widest text-muted-foreground select-none">
           GV
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1]">
             Gabriel Vega
           </h1>
-          <p className="text-lg text-muted-foreground font-medium">
-            Senior Software Engineer · 12+ years
+          <p className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+            Senior Software Engineer · 12+ Years
           </p>
         </div>
 
-        <p className="text-base leading-relaxed text-foreground/80 max-w-xl">
-          I build full-stack web apps, enterprise platforms, and conversational AI at the
-          intersection of <strong className="text-foreground">TypeScript</strong>,{' '}
-          <strong className="text-foreground">Next.js</strong>, and modern AI tooling.
-          Previously at <strong className="text-foreground">Snapchat</strong> and{' '}
-          <strong className="text-foreground">Backbase</strong>.
+        <p className="text-base leading-relaxed text-foreground/75 max-w-xl">
+          I build robust, scalable software systems with a focus on clean architecture and minimal
+          design. Previously at <strong className="text-foreground font-medium">Snapchat</strong> and{' '}
+          <strong className="text-foreground font-medium">Backbase</strong>. Passionate about
+          conversational AI and developer tooling.
         </p>
 
         <div className="flex flex-wrap gap-3 pt-1">
@@ -64,42 +62,46 @@ export default function Home() {
             href="https://www.linkedin.com/in/gaveho/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
           >
             LinkedIn ↗
           </a>
           <Link
             href="/blog"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 border border-border text-sm font-medium hover:bg-accent transition-colors"
           >
             Read the blog →
           </Link>
         </div>
       </section>
 
-      {/* Skills */}
-      <section className="space-y-5">
+      {/* Technical Arsenal */}
+      <section className="space-y-6">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Tech Stack
+          Technical Arsenal
         </h2>
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
           {skillGroups.map((group) => (
-            <div key={group.label} className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground/60 w-16 shrink-0">{group.label}</span>
-              {group.skills.map((s) => (
-                <Badge key={s} variant="secondary" className="text-xs font-normal">
-                  {s}
-                </Badge>
-              ))}
+            <div key={group.label} className="space-y-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground/60 font-medium">
+                {group.label}
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {group.skills.map((s) => (
+                  <span key={s} className="text-sm text-foreground/80">
+                    {s}
+                  </span>
+                ))}
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Projects */}
-      <section className="space-y-5">
+      {/* Selected Work */}
+      <section className="space-y-6">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Projects
+          Selected Work
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {projects.map((p) => (
@@ -108,44 +110,40 @@ export default function Home() {
               href={p.url}
               target={p.url !== '#' ? '_blank' : undefined}
               rel="noopener noreferrer"
-              className={`group block p-5 rounded-xl border border-border hover:border-border/80 hover:shadow-md bg-card transition-all duration-200 ${p.url === '#' ? 'pointer-events-none opacity-70' : ''}`}
+              className={`group block p-6 border border-border hover:border-foreground/20 hover:shadow-md bg-card transition-all duration-200 ${p.url === '#' ? 'pointer-events-none opacity-60' : ''}`}
             >
               <div className="flex items-start justify-between gap-2 mb-3">
-                <h3 className="font-semibold group-hover:text-primary transition-colors">
+                <h3 className="font-semibold text-base group-hover:text-primary transition-colors">
                   {p.name}
                 </h3>
-                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                <span className={`text-xs px-2 py-0.5 shrink-0 flex items-center gap-1 ${
                   p.status === 'Live'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : 'text-amber-700 dark:text-amber-400'
                 }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full inline-block ${p.status === 'Live' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                   {p.status}
                 </span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
                 {p.description}
               </p>
-              <div className="flex flex-wrap gap-1">
-                {p.tags.map((t) => (
-                  <Badge key={t} variant="outline" className="text-xs font-normal">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
+              <p className="text-xs text-muted-foreground/60 font-mono">
+                {'<>'} {p.tags.join(', ')}
+              </p>
             </a>
           ))}
         </div>
       </section>
 
       {/* Experience */}
-      <section className="space-y-5">
+      <section className="space-y-6">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Experience
         </h2>
-        <div className="relative space-y-0 border-l border-border ml-1">
+        <div className="relative border-l border-border ml-1 space-y-0">
           {experience.map((e, i) => (
-            <div key={e.company} className={`relative pl-6 ${i < experience.length - 1 ? 'pb-6' : ''}`}>
-              {/* dot */}
+            <div key={e.company} className={`relative pl-6 ${i < experience.length - 1 ? 'pb-7' : ''}`}>
               <div className={`absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 ${
                 e.current
                   ? 'bg-foreground border-foreground'
@@ -156,7 +154,7 @@ export default function Home() {
                   <p className="font-medium leading-snug">{e.company}</p>
                   <p className="text-sm text-muted-foreground">{e.role}</p>
                 </div>
-                <p className="text-xs text-muted-foreground/70 tabular-nums sm:text-right shrink-0">
+                <p className="text-xs text-muted-foreground/60 tabular-nums font-mono sm:text-right shrink-0">
                   {e.period}
                 </p>
               </div>
