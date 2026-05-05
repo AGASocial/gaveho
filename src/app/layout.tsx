@@ -3,7 +3,7 @@ import { Sora, JetBrains_Mono } from 'next/font/google'
 import { Nav } from '@/components/layout/nav'
 import './globals.css'
 
-const sora = Sora({ variable: '--font-geist-sans', subsets: ['latin'], weight: ['300', '400', '500', '600', '700', '800'] })
+const sora = Sora({ variable: '--font-sans', subsets: ['latin'], weight: ['300', '400', '500', '600', '700', '800'] })
 const jetbrainsMono = JetBrains_Mono({ variable: '--font-geist-mono', subsets: ['latin'], weight: ['400', '500'] })
 
 export const metadata: Metadata = {
