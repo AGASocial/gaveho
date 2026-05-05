@@ -28,6 +28,7 @@ const experience = [
   { company: 'Snapchat', role: 'Senior Software Engineer', period: '10/2024 – 06/2025', current: false },
   { company: '84.51°', role: 'Senior Software Engineer', period: '05/2024 – 10/2024', current: false },
   { company: 'Backbase', role: 'Senior Frontend Engineer', period: '06/2021 – 04/2024', current: false },
+  { company: 'Lexicon Networks', role: 'Software Consultant', period: '05/2018 – 05/2021', current: false },
 ]
 
 export default function Home() {
