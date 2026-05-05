@@ -12,7 +12,7 @@ const projects = [
     url: 'https://cctvmagic.aga.social',
     description: 'AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora.',
     tags: ['Next.js', 'OpenAI Sora', 'Supabase', 'Stripe'],
-    status: 'Live',
+    status: 'In Progress',
   },
   {
     name: 'NeuraliticaBot',
