@@ -108,10 +108,10 @@ export default function Home() {
           {projects.map((p) => (
             <a
               key={p.name}
-              href={p.url}
-              target={p.url !== '#' ? '_blank' : undefined}
+              href={p.status === 'Live' ? p.url : undefined}
+              target={p.status === 'Live' ? '_blank' : undefined}
               rel="noopener noreferrer"
-              className={`group block p-6 border border-border hover:border-foreground/20 hover:shadow-md bg-card transition-all duration-200 ${p.url === '#' ? 'pointer-events-none opacity-60' : ''}`}
+              className={`block p-6 border border-border bg-card transition-all duration-200 ${p.status === 'Live' ? 'group hover:border-foreground/20 hover:shadow-md cursor-pointer' : 'pointer-events-none opacity-60 cursor-default'}`}
             >
               <div className="flex items-start justify-between gap-2 mb-3">
                 <h3 className="font-semibold text-base group-hover:text-primary transition-colors">
