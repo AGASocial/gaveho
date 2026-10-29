@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { AgentChatWidget } from '@/components/agent-chat-widget'
 
 const skillGroups = [
   { label: 'Frontend', skills: ['TypeScript', 'Next.js', 'Angular', 'React', 'Tailwind CSS'] },
@@ -33,64 +34,69 @@ const experience = [
 
 export default function Home() {
   return (
-    <div className="space-y-20">
+    <div className="space-y-16">
 
-      {/* Hero */}
-      <section className="pt-6 space-y-6">
-        {/* Avatar */}
-        <div className="w-14 h-14 bg-muted border border-border flex items-center justify-center text-sm font-semibold tracking-widest text-muted-foreground select-none">
-          GV
+      {/* Terminal Hero */}
+      <section className="space-y-6">
+        <div className="text-sm text-emerald-500 dark:text-emerald-500 font-mono">
+          <span className="animate-pulse">▸</span> gabriel.vega --info
         </div>
-
-        <div className="space-y-2">
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1]">
+        
+        <div className="space-y-4">
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-gray-100 leading-tight">
             Gabriel Vega
           </h1>
-          <p className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+          <p className="text-cyan-700 dark:text-cyan-400 text-lg font-medium">
             Senior Software Engineer · 12+ Years
           </p>
         </div>
 
-        <p className="text-base leading-relaxed text-foreground/75 max-w-xl">
-          I build robust, scalable software systems with a focus on clean architecture and minimal
-          design. Previously at <strong className="text-foreground font-medium">Snapchat</strong> and{' '}
-          <strong className="text-foreground font-medium">Backbase</strong>. Passionate about
-          conversational AI and developer tooling.
-        </p>
+        <div className="space-y-3 text-gray-700 dark:text-gray-300 leading-relaxed max-w-2xl">
+          <p>
+            I build robust, scalable software systems with a focus on clean architecture and minimal
+            design. Previously at <strong className="text-gray-900 dark:text-gray-100 font-semibold">Snapchat</strong> and{' '}
+            <strong className="text-gray-900 dark:text-gray-100 font-semibold">Backbase</strong>. Passionate about
+            conversational AI and developer tooling.
+          </p>
+        </div>
 
-        <div className="flex flex-wrap gap-3 pt-1">
+        <div className="text-sm text-emerald-600 dark:text-emerald-500">
+          <span className="animate-pulse">▸</span> building with AI & TypeScript █
+        </div>
+
+        <div className="flex flex-wrap gap-3 pt-2">
           <a
             href="https://www.linkedin.com/in/gaveho/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-semibold transition-colors"
           >
             LinkedIn ↗
           </a>
           <Link
             href="/blog"
-            className="inline-flex items-center gap-1.5 px-4 py-2 border border-border text-sm font-medium hover:bg-accent transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 border-2 border-cyan-700 hover:border-cyan-600 dark:border-cyan-500/60 dark:hover:border-cyan-400 text-cyan-800 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-semibold transition-colors"
           >
             Read the blog →
           </Link>
         </div>
       </section>
 
-      {/* Technical Arsenal */}
+      {/* Skills */}
       <section className="space-y-6">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Technical Arsenal
-        </h2>
+        <div className="text-sm text-cyan-700 dark:text-cyan-500 font-mono">
+          <span className="text-emerald-600 dark:text-emerald-500">▸</span> ls -la /skills
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
           {skillGroups.map((group) => (
             <div key={group.label} className="space-y-3">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground/60 font-medium">
-                {group.label}
-              </p>
+              <div className="text-emerald-700 dark:text-emerald-500 font-semibold text-sm">
+                [ {group.label} ]
+              </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {group.skills.map((s) => (
-                  <span key={s} className="text-sm text-foreground/80">
-                    {s}
+                  <span key={s} className="text-sm text-gray-700 dark:text-gray-400">
+                    · {s}
                   </span>
                 ))}
               </div>
@@ -99,69 +105,81 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Selected Work */}
-      <section className="space-y-6">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Selected Work
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+      {/* Projects */}
+      <section id="projects" className="space-y-6">
+        <div className="text-sm text-cyan-700 dark:text-cyan-500 font-mono">
+          <span className="text-emerald-600 dark:text-emerald-500">▸</span> cat projects.md
+        </div>
+        <div className="grid gap-5 sm:grid-cols-2">
           {projects.map((p) => (
-            <a
+            <div
               key={p.name}
-              href={p.status === 'Live' ? p.url : undefined}
-              target={p.status === 'Live' ? '_blank' : undefined}
-              rel="noopener noreferrer"
-              className={`block p-6 border border-border bg-card transition-all duration-200 ${p.status === 'Live' ? 'group hover:border-foreground/20 hover:shadow-md cursor-pointer' : 'pointer-events-none opacity-60 cursor-default'}`}
+              className="border-2 border-emerald-600/30 dark:border-emerald-500/30 bg-gray-50 dark:bg-black/40 p-5 hover:border-cyan-600/60 dark:hover:border-cyan-500/60 transition-colors group"
             >
               <div className="flex items-start justify-between gap-2 mb-3">
-                <h3 className="font-semibold text-base group-hover:text-primary transition-colors">
+                <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition-colors">
                   {p.name}
                 </h3>
-                <span className={`text-xs px-2 py-0.5 shrink-0 flex items-center gap-1 ${
+                <span className={`text-xs px-2 py-1 border-2 ${
                   p.status === 'Live'
-                    ? 'text-emerald-700 dark:text-emerald-400'
-                    : 'text-amber-700 dark:text-amber-400'
+                    ? 'border-emerald-600/50 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-400'
+                    : 'border-amber-600/50 dark:border-amber-500/50 text-amber-700 dark:text-amber-400'
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full inline-block ${p.status === 'Live' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                   {p.status}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed mb-4">
                 {p.description}
               </p>
-              <p className="text-xs text-muted-foreground/60 font-mono">
-                {'<>'} {p.tags.join(', ')}
-              </p>
-            </a>
+              <div className="flex flex-wrap gap-2">
+                {p.tags.map((tag) => (
+                  <span key={tag} className="text-xs text-cyan-700 dark:text-cyan-500">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+              {p.status === 'In Progress' && (
+                <div className="mt-4 text-xs text-gray-500 dark:text-gray-500">
+                  <span className="text-amber-600 dark:text-amber-500">▸</span> In Progress...
+                  <span className="inline-block w-1 h-3 bg-amber-600 dark:bg-amber-500 animate-pulse ml-1" />
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </section>
 
       {/* Experience */}
       <section className="space-y-6">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Experience
-        </h2>
-        <div className="relative border-l border-border ml-1 space-y-0">
-          {experience.map((e, i) => (
-            <div key={e.company} className={`relative pl-6 ${i < experience.length - 1 ? 'pb-7' : ''}`}>
-              <div className={`absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 ${
-                e.current
-                  ? 'bg-foreground border-foreground'
-                  : 'bg-background border-border'
-              }`} />
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5">
-                <div>
-                  <p className="font-medium leading-snug">{e.company}</p>
-                  <p className="text-sm text-muted-foreground">{e.role}</p>
+        <div className="text-sm text-cyan-700 dark:text-cyan-500 font-mono">
+          <span className="text-emerald-600 dark:text-emerald-500">▸</span> history
+        </div>
+        <div className="space-y-4">
+          {experience.map((e) => (
+            <div key={e.company} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4 border-b border-gray-300 dark:border-border/20">
+              <div>
+                <div className="flex items-center gap-2">
+                  {e.current && (
+                    <span className="w-2 h-2 bg-emerald-600 dark:bg-emerald-500 rounded-full animate-pulse" />
+                  )}
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">{e.company}</p>
                 </div>
-                <p className="text-xs text-muted-foreground/60 tabular-nums font-mono sm:text-right shrink-0">
-                  {e.period}
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{e.role}</p>
               </div>
+              <p className="text-xs text-cyan-700 dark:text-cyan-500 font-mono">
+                {e.period}
+              </p>
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Agent Chat Widget */}
+      <section className="space-y-6">
+        <div className="text-sm text-cyan-700 dark:text-cyan-500 font-mono">
+          <span className="text-emerald-600 dark:text-emerald-500">▸</span> whoami
+        </div>
+        <AgentChatWidget />
       </section>
 
     </div>
