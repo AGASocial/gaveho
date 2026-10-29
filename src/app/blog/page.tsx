@@ -26,13 +26,13 @@ export default async function BlogPage({
   return (
     <div className="space-y-10">
       <div className="space-y-6">
-        <div className="text-sm text-cyan-500 font-mono">
-          <span className="text-emerald-500">▸</span> cat blog/index.md
+        <div className="text-sm text-cyan-700 dark:text-cyan-500 font-mono">
+          <span className="text-emerald-600 dark:text-emerald-500">▸</span> cat blog/index.md
         </div>
         
         <div className="space-y-3">
-          <h1 className="text-4xl font-bold text-gray-100">Blog</h1>
-          <p className="text-gray-300 leading-relaxed max-w-2xl">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100">Blog</h1>
+          <p className="text-gray-700 dark:text-gray-300 leading-relaxed max-w-2xl">
             Thoughts, technical deep dives, and reflections on building software with minimal friction and maximum intent.
           </p>
         </div>
@@ -43,8 +43,8 @@ export default async function BlogPage({
             className={cn(
               'px-4 py-2 border-2 transition-colors font-semibold',
               !language
-                ? 'bg-emerald-600 text-black border-emerald-600'
-                : 'border-gray-600 text-gray-400 hover:text-emerald-400 hover:border-emerald-500/50'
+                ? 'bg-emerald-700 text-white dark:bg-emerald-600 dark:text-black border-emerald-700 dark:border-emerald-600'
+                : 'border-gray-400 dark:border-gray-600 text-gray-700 dark:text-gray-400 hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-600 dark:hover:border-emerald-500/50'
             )}
           >
             All
@@ -54,8 +54,8 @@ export default async function BlogPage({
             className={cn(
               'px-4 py-2 border-2 transition-colors font-semibold',
               language === 'en'
-                ? 'bg-cyan-600 text-black border-cyan-600'
-                : 'border-gray-600 text-gray-400 hover:text-cyan-400 hover:border-cyan-500/50'
+                ? 'bg-cyan-700 text-white dark:bg-cyan-600 dark:text-black border-cyan-700 dark:border-cyan-600'
+                : 'border-gray-400 dark:border-gray-600 text-gray-700 dark:text-gray-400 hover:text-cyan-700 dark:hover:text-cyan-400 hover:border-cyan-600 dark:hover:border-cyan-500/50'
             )}
           >
             🇺🇸 English
@@ -65,8 +65,8 @@ export default async function BlogPage({
             className={cn(
               'px-4 py-2 border-2 transition-colors font-semibold',
               language === 'es'
-                ? 'bg-cyan-600 text-black border-cyan-600'
-                : 'border-gray-600 text-gray-400 hover:text-cyan-400 hover:border-cyan-500/50'
+                ? 'bg-cyan-700 text-white dark:bg-cyan-600 dark:text-black border-cyan-700 dark:border-cyan-600'
+                : 'border-gray-400 dark:border-gray-600 text-gray-700 dark:text-gray-400 hover:text-cyan-700 dark:hover:text-cyan-400 hover:border-cyan-600 dark:hover:border-cyan-500/50'
             )}
           >
             🇪🇸 Español
@@ -76,7 +76,7 @@ export default async function BlogPage({
 
       {posts.length === 0 ? (
         <div className="py-16 text-center space-y-2">
-          <p className="text-gray-400 text-sm">
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
             {language === 'es' ? 'No hay artículos aún — vuelve pronto.' : 'No posts yet — check back soon.'}
           </p>
         </div>

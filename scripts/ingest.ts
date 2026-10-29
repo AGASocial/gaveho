@@ -71,27 +71,22 @@ async function ingestHomepage(): Promise<number> {
   console.log('📄 Ingesting homepage content...')
   
   const homepageContent = {
-    bio: "I build production-grade AI agents and scalable software that turn complex problems into useful, reliable products. Focused on code, models, and real-world impact.",
+    bio: "I build robust, scalable software systems with a focus on clean architecture and minimal design. Previously at Snapchat and Backbase. Passionate about conversational AI and developer tooling.",
     skills: [
-      { label: 'TypeScript', skills: ['Next.js', 'React', 'Angular', 'Node.js'] },
-      { label: 'Python', skills: ['FastAPI', 'LangChain', 'OpenAI', 'RAG'] },
-      { label: 'LLM', skills: ['GPT-4', 'Claude', 'Agents', 'Prompt Engineering'] },
-      { label: 'RAG', skills: ['Vector DBs', 'Embeddings', 'Semantic Search', 'Retrieval'] },
-      { label: 'Agents', skills: ['LangChain', 'AutoGPT', 'CrewAI', 'Tool Calling'] },
-      { label: 'PostgreSQL', skills: ['Supabase', 'Prisma', 'Migrations', 'Optimization'] },
-      { label: 'Docker', skills: ['Compose', 'Kubernetes', 'CI/CD', 'Containers'] },
-      { label: 'FastAPI', skills: ['REST', 'WebSockets', 'Async', 'Pydantic'] },
+      { label: 'Frontend', skills: ['TypeScript', 'Next.js', 'Angular', 'React', 'Tailwind CSS'] },
+      { label: 'Backend', skills: ['Node.js', 'Supabase', 'PostgreSQL', 'Docker', 'GCP', 'Azure'] },
+      { label: 'AI & Cloud', skills: ['OpenAI', 'Claude', 'RAG', 'LangChain', 'Vercel'] },
     ],
     projects: [
       {
         name: 'CCTV Magic',
         description: 'AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora.',
-        tags: ['Python', 'OpenCV', 'CLIP', 'FastAPI', 'Redis'],
+        tags: ['Next.js', 'OpenAI Sora', 'Supabase', 'Stripe'],
       },
       {
         name: 'NeuraliticaBot',
         description: 'Chat with your files (PDF, DOCX, CSV, images) using RAG and OpenAI models.',
-        tags: ['LangChain', 'OpenAI', 'FastAPI', 'Telegram'],
+        tags: ['Next.js', 'RAG', 'OpenAI', 'Supabase'],
       },
     ],
     experience: [

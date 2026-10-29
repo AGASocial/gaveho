@@ -2,7 +2,7 @@
 
 ## What do you specialize in?
 
-I specialize in building production-grade AI agents and scalable software systems. My focus is on taking complex problems and turning them into reliable, useful products. I work extensively with TypeScript, Python, and modern AI frameworks like LangChain, OpenAI, and Claude.
+I specialize in building robust, scalable software systems with a focus on clean architecture and minimal design. I work with TypeScript, Next.js, React, Angular, Node.js, Supabase, PostgreSQL, Docker, and cloud platforms like GCP and Azure. I'm particularly passionate about conversational AI and developer tooling, using technologies like OpenAI, Claude, RAG, LangChain, and Vercel.
 
 ## Are you available for consulting or freelance work?
 
@@ -10,35 +10,30 @@ I'm currently employed full-time at Aequilibrium as a Senior Frontend Developer.
 
 ## What's your development philosophy?
 
-I believe in building software with minimal friction and maximum intent. Clean architecture, pragmatic solutions, and real-world impact matter more than following trends. I focus on code quality, maintainability, and shipping products that actually solve problems.
+I build robust, scalable software systems with a focus on clean architecture and minimal design. I believe in writing clean code, pragmatic solutions, and delivering real value.
 
 ## What technologies do you use most?
 
 My core stack includes:
-- **Frontend**: TypeScript, Next.js, React, Tailwind CSS
-- **Backend**: Node.js, Python, FastAPI, Supabase, PostgreSQL
-- **AI/ML**: OpenAI GPT-4, Claude, LangChain, RAG systems, vector databases
-- **DevOps**: Docker, Vercel, GCP, Azure
+- **Frontend**: TypeScript, Next.js, Angular, React, Tailwind CSS
+- **Backend**: Node.js, Supabase, PostgreSQL, Docker, GCP, Azure
+- **AI & Cloud**: OpenAI, Claude, RAG, LangChain, Vercel
 
 ## What kind of projects are you working on?
 
 Right now I'm building:
-- **CCTV Magic**: An AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora
-- **NeuraliticaBot**: A RAG-powered assistant that lets you chat with your files (PDF, DOCX, CSV, images)
+- **CCTV Magic**: An AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora. Built with Next.js, OpenAI Sora, Supabase, and Stripe.
+- **NeuraliticaBot**: A RAG-powered assistant that lets you chat with your files (PDF, DOCX, CSV, images). Built with Next.js, RAG, OpenAI, and Supabase.
 
-Both projects combine AI capabilities with real user needs.
-
-## Do you speak Spanish?
-
-Sí, hablo español. I'm bilingual and comfortable working in both English and Spanish environments.
+Both projects are currently in progress.
 
 ## What's your work history?
 
-I've worked at:
+I have over 12 years of professional software development experience. I've worked at:
 - **Aequilibrium** (2025-present) - Senior Frontend Developer
 - **Snapchat** (2024-2025) - Senior Software Engineer
 - **84.51°** (2024) - Senior Software Engineer
 - **Backbase** (2021-2024) - Senior Frontend Engineer
 - **Lexicon Networks** (2018-2021) - Software Consultant
 
-Over 12 years of professional software development experience.
+Previously at Snapchat and Backbase, I've built experience in large-scale systems and modern web development.
