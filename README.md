@@ -7,6 +7,8 @@ Gabriel Vega's personal website featuring a dark terminal-inspired design and an
 - 🎨 Dark terminal theme with monospace aesthetics
 - 💬 RAG-powered AI chat agent (answers as Gabriel, grounded in his knowledge)
 - 📝 Blog with bilingual support (English/Spanish)
+- ✍️ Admin dashboard for idea-to-blog-draft workflow
+- 🔍 News discovery with AI-powered relevance scoring
 - 🌓 Theme toggle with humor
 - 📱 Fully responsive design
 
@@ -36,20 +38,33 @@ AGENT_SECRET=your_random_secret_key
 ### Required for AI Chat Agent
 
 ```env
-# Anthropic (for chat responses)
+# Anthropic (for chat responses and blog generation)
 ANTHROPIC_API_KEY=your_anthropic_api_key
 
 # OpenAI (for embeddings)
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-**Note**: The chat widget will show a "coming soon" message if AI environment variables are missing, so the site works without them.
+### Optional: News Search (Admin Dashboard)
+
+```env
+# Tavily (recommended): https://tavily.com
+TAVILY_API_KEY=your_tavily_api_key
+
+# OR Brave Search: https://brave.com/search/api/
+BRAVE_SEARCH_API_KEY=your_brave_search_api_key
+
+# Control which provider to use (default: tavily)
+NEWS_SEARCH_PROVIDER=tavily
+```
+
+**Note**: The chat widget will show a "coming soon" message if AI environment variables are missing, so the site works without them. The admin dashboard works without news search APIs, but news discovery will be disabled.
 
 ## Database Setup
 
 ### 1. Run Supabase Migrations
 
-Apply the migration to create the knowledge base table:
+Apply the migrations to create required tables:
 
 ```bash
 # Via Supabase CLI (recommended)
@@ -57,11 +72,13 @@ supabase db push
 
 # Or manually in Supabase SQL editor
 # Copy and run: supabase/migrations/20261029_create_knowledge_table.sql
+# Copy and run: supabase/ideas_table.sql (for admin dashboard)
 ```
 
 This creates:
 - `gaveho_knowledge` table with pgvector embeddings
 - `match_gaveho_knowledge()` function for semantic search
+- `gaveho_ideas` table for tracking blog ideas
 - Row-level security policies
 
 ### 2. Ingest Knowledge Base
@@ -91,6 +108,59 @@ npm run dev
 # Open http://localhost:3000
 ```
 
+## Admin Dashboard (`/admin/ideas`)
+
+Private entry point for Gabriel (protected by `AGENT_SECRET`). Features:
+
+### Idea Submission
+- Paste a topic directly
+- Provide a URL to an article (automatic server-side extraction)
+- Add notes via typing or voice dictation (Web Speech API)
+
+### News Discovery
+- Search for relevant news aligned with Gabriel's profile:
+  - AI, LLMs, agents
+  - Web dev, Next.js, TypeScript
+  - Developer tooling
+  - Building products
+- Returns 5-10 candidates with:
+  - Title, source, published date
+  - Snippet preview
+  - AI-powered relevance analysis ("why it fits Gabriel")
+- Click a result to auto-populate idea form with extracted article content
+
+### Draft Generation
+- Generates **both** English and Spanish blog posts
+- Includes TikTok script (Spanish)
+- Shows preview links with `?preview=AGENT_SECRET`
+- Saves drafts as `published=false`
+
+### Draft Management
+- List all unpublished posts
+- Language badges (🇬🇧 EN / 🇪🇸 ES)
+- Preview links
+- Manual "Publish" button with confirmation dialog
+
+### Idea Tracking
+All submissions stored in `gaveho_ideas` table with:
+- Topic, source URL, notes
+- Status: `new`, `drafted`, or `discarded`
+- Linked post IDs
+
+### API Endpoints
+
+- `POST /api/agent` - Generate EN + ES blog drafts (existing, public API)
+- `POST /api/admin/login` - Authenticate with AGENT_SECRET
+- `GET /api/admin/login` - Check auth status
+- `GET /api/admin/ideas?status=` - List ideas by status
+- `POST /api/admin/ideas` - Create idea
+- `PATCH /api/admin/ideas` - Update idea status
+- `POST /api/admin/generate` - Generate drafts + save idea
+- `POST /api/admin/search-news` - Search web for relevant news
+- `POST /api/admin/extract-article` - Extract article text from URL
+- `GET /api/admin/drafts` - List unpublished posts
+- `POST /api/admin/publish` - Publish a draft
+
 ## Production Deployment
 
 ### On Vercel
@@ -101,12 +171,13 @@ npm run dev
 
 ### After First Deploy
 
-1. **Apply database migration** in Supabase SQL editor
+1. **Apply database migrations** in Supabase SQL editor
 2. **Run ingestion locally** with production env vars:
    ```bash
    npm run ingest
    ```
 3. **Verify chat widget** works on production
+4. **Access admin dashboard** at `/admin/ideas` with `AGENT_SECRET`
 
 ### Updating Knowledge Base
 
@@ -121,19 +192,28 @@ To update the AI agent's knowledge:
 ```
 ├── src/
 │   ├── app/
-│   │   ├── api/chat/        # RAG chat endpoint
+│   │   ├── admin/ideas/     # Admin dashboard
+│   │   ├── api/
+│   │   │   ├── admin/       # Admin API endpoints
+│   │   │   ├── agent/       # Blog generation API
+│   │   │   └── chat/        # RAG chat endpoint
 │   │   ├── blog/            # Blog pages
 │   │   └── page.tsx         # Homepage
 │   ├── components/
 │   │   ├── agent-chat-widget.tsx  # AI chat UI
 │   │   └── ...
 │   └── lib/
+│       ├── admin-auth.ts    # Admin authentication
 │       ├── chunking.ts      # Text chunking utilities
+│       ├── generate.ts      # Blog generation logic
+│       ├── ideas.ts         # Ideas CRUD
+│       ├── drafts.ts        # Drafts management
 │       └── ...
 ├── scripts/
 │   └── ingest.ts            # Knowledge base ingestion
 ├── supabase/
-│   └── migrations/          # Database migrations
+│   ├── migrations/          # Database migrations
+│   └── ideas_table.sql      # Ideas table migration
 ├── knowledge/               # Custom knowledge files
 │   ├── README.md
 │   └── faq.md
