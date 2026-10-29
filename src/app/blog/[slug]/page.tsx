@@ -1,7 +1,5 @@
 import { notFound } from 'next/navigation'
 import { getPostBySlug } from '@/lib/posts'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { formatDate } from '@/lib/utils'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import type { Metadata } from 'next'
@@ -40,44 +38,53 @@ export default async function PostPage({
 
   return (
     <article className="space-y-8">
-      {/* Draft banner */}
       {!post.published && (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-2 rounded-md">
-          📝 <strong>Draft</strong> — this post is not published yet.
+        <div className="bg-amber-900/30 border-2 border-amber-500/50 text-amber-300 text-sm px-4 py-3 font-mono">
+          <span className="text-amber-500">▸</span> DRAFT — this post is not published yet.
         </div>
       )}
 
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="flex flex-wrap gap-1">
+      <div className="space-y-5">
+        <div className="text-sm text-cyan-500 font-mono">
+          <span className="text-emerald-500">▸</span> cat blog/{post.slug}.md
+        </div>
+        
+        <div className="flex flex-wrap gap-2">
           {post.tags?.map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
-              {tag}
-            </Badge>
+            <span key={tag} className="text-xs px-2 py-1 border-2 border-cyan-500/40 text-cyan-400">
+              #{tag}
+            </span>
           ))}
         </div>
-        <h1 className="text-3xl font-bold tracking-tight leading-tight">{post.title}</h1>
-        <p className="text-muted-foreground">{formatDate(post.created_at)}</p>
-        <p className="text-lg text-muted-foreground leading-relaxed">{post.excerpt}</p>
+        
+        <h1 className="text-3xl font-bold leading-tight text-gray-100">{post.title}</h1>
+        
+        <div className="flex items-center gap-2 text-sm text-emerald-500">
+          <span>▸</span>
+          <span>{formatDate(post.created_at)}</span>
+        </div>
+        
+        <p className="text-lg text-gray-300 leading-relaxed">{post.excerpt}</p>
       </div>
 
-      <Separator />
+      <div className="border-t border-emerald-500/30" />
 
-      {/* Content */}
-      <div className="prose prose-neutral dark:prose-invert max-w-none
-        prose-headings:font-semibold prose-headings:tracking-tight prose-headings:scroll-mt-20
-        prose-p:leading-relaxed prose-p:text-foreground/90
-        prose-a:text-primary prose-a:no-underline prose-a:font-medium hover:prose-a:underline
-        prose-strong:text-foreground prose-strong:font-semibold
-        prose-blockquote:border-l-primary/40 prose-blockquote:text-muted-foreground prose-blockquote:not-italic
+      <div className="prose prose-invert max-w-none
+        prose-headings:font-bold prose-headings:text-gray-100 prose-headings:tracking-tight prose-headings:scroll-mt-20
+        prose-p:leading-relaxed prose-p:text-gray-300
+        prose-a:text-cyan-400 prose-a:no-underline prose-a:font-medium hover:prose-a:underline
+        prose-strong:text-emerald-400 prose-strong:font-bold
+        prose-blockquote:border-l-4 prose-blockquote:border-cyan-500/50 prose-blockquote:text-gray-400 prose-blockquote:not-italic prose-blockquote:pl-4
         prose-code:before:content-none prose-code:after:content-none
-        prose-code:bg-zinc-900 prose-code:text-emerald-300 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-[0.85em] prose-code:font-mono prose-code:font-normal
-        prose-pre:bg-zinc-950 prose-pre:border prose-pre:border-zinc-800 prose-pre:rounded-lg prose-pre:shadow-md
-        prose-pre:text-zinc-100
-        [&_pre_code]:bg-transparent [&_pre_code]:text-zinc-100 [&_pre_code]:p-0
-        prose-hr:border-border
-        prose-li:text-foreground/90
-        prose-img:rounded-lg prose-img:shadow-sm">
+        prose-code:bg-emerald-950 prose-code:text-emerald-300 prose-code:px-2 prose-code:py-0.5 prose-code:text-sm prose-code:font-mono
+        prose-pre:bg-black prose-pre:border-2 prose-pre:border-emerald-500/30 prose-pre:rounded-none prose-pre:shadow-lg
+        prose-pre:text-gray-100
+        [&_pre_code]:bg-transparent [&_pre_code]:text-gray-100 [&_pre_code]:p-0
+        prose-hr:border-emerald-500/30
+        prose-li:text-gray-300
+        prose-ul:list-disc prose-ul:list-inside
+        prose-ol:list-decimal prose-ol:list-inside
+        prose-img:rounded-none prose-img:border-2 prose-img:border-cyan-500/30">
         <MDXRemote source={post.content} />
       </div>
     </article>

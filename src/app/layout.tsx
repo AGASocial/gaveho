@@ -1,36 +1,33 @@
 import type { Metadata } from 'next'
-import { Sora, JetBrains_Mono } from 'next/font/google'
-import { Nav } from '@/components/layout/nav'
+import { JetBrains_Mono } from 'next/font/google'
+import { ClientLayout } from '@/components/client-layout'
 import './globals.css'
 
-const sora = Sora({ variable: '--font-sans', subsets: ['latin'], weight: ['300', '400', '500', '600', '700', '800'] })
-const jetbrainsMono = JetBrains_Mono({ variable: '--font-geist-mono', subsets: ['latin'], weight: ['400', '500'] })
+const jetbrainsMono = JetBrains_Mono({ 
+  variable: '--font-mono', 
+  subsets: ['latin'], 
+  weight: ['400', '500', '600', '700'] 
+})
 
 export const metadata: Metadata = {
   title: { default: 'Gabriel Vega', template: '%s | Gabriel Vega' },
-  description: 'Senior Software Engineer. Building with AI, TypeScript, and cloud-native architectures.',
+  description: 'Senior Software Engineer & AI builder. Building production-grade AI agents and scalable software.',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gaveho.com'),
   openGraph: {
     siteName: 'Gabriel Vega',
     locale: 'en_US',
     type: 'website',
   },
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sora.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
-      <body className="antialiased bg-background text-foreground min-h-full flex flex-col">
-        <Nav />
-        <main className="max-w-4xl mx-auto px-6 py-12 w-full flex-1">
-          {children}
-        </main>
-        <footer className="border-t border-border/40 mt-24">
-          <div className="max-w-4xl mx-auto px-6 py-6 text-xs text-muted-foreground flex items-center justify-between gap-4">
-            <span>© {new Date().getFullYear()} Gabriel Vega</span>
-            <span className="text-muted-foreground/50">Built with Next.js · Deployed on Vercel</span>
-          </div>
-        </footer>
+    <html lang="en" className={`${jetbrainsMono.variable} dark`} suppressHydrationWarning>
+      <body className="antialiased bg-background text-foreground min-h-screen flex flex-col font-mono">
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   )
