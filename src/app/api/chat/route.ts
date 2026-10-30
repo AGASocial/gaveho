@@ -1,54 +1,50 @@
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
-import OpenAI from 'openai'
+import { embed, streamText } from 'ai'
 import { NextRequest } from 'next/server'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
 
-// Rate limiting store (in-memory, resets on deploy)
-const rateLimits = new Map<string, { count: number; resetAt: number }>()
-
-const MAX_REQUESTS_PER_HOUR = 20
 const MAX_MESSAGE_LENGTH = 1000
 
-function getRateLimitKey(req: NextRequest): string {
-  // Use x-forwarded-for or x-real-ip for production
-  return req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-         req.headers.get('x-real-ip') ||
-         'unknown'
+// Rate limiting with Upstash (gracefully degrades if not configured)
+let ratelimit: Ratelimit | null = null
+try {
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+    ratelimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(20, '60 m'),
+      analytics: true,
+      prefix: 'ratelimit:chat',
+    })
+  }
+} catch (err) {
+  console.warn('[chat] Rate limiting not configured:', err)
 }
 
-function checkRateLimit(key: string): boolean {
-  const now = Date.now()
-  const limit = rateLimits.get(key)
-  
-  if (!limit || now > limit.resetAt) {
-    rateLimits.set(key, {
-      count: 1,
-      resetAt: now + 60 * 60 * 1000, // 1 hour
-    })
-    return true
-  }
-  
-  if (limit.count >= MAX_REQUESTS_PER_HOUR) {
-    return false
-  }
-  
-  limit.count++
-  return true
+function getRateLimitKey(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+    req.headers.get('x-real-ip') ||
+    'unknown'
+  )
 }
 
 function detectLanguage(text: string): 'en' | 'es' {
-  // Simple heuristic: check for common Spanish words
   const spanishWords = /\b(qué|cómo|cuál|dónde|cuándo|por qué|hola|gracias|trabajo|proyecto)\b/i
   return spanishWords.test(text) ? 'es' : 'en'
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // Check for required env vars
+    // Check for required env vars (AI Gateway + Supabase)
+    const hasGateway = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || 
         !process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        !process.env.OPENAI_API_KEY ||
-        !process.env.ANTHROPIC_API_KEY) {
+        !hasGateway) {
       return new Response(
         JSON.stringify({ 
           error: 'Service temporarily unavailable',
@@ -75,38 +71,45 @@ export async function POST(req: NextRequest) {
     }
     
     // Rate limiting
-    const clientKey = getRateLimitKey(req)
-    if (!checkRateLimit(clientKey)) {
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
-        { status: 429, headers: { 'Content-Type': 'application/json' } }
-      )
+    if (ratelimit) {
+      const clientKey = getRateLimitKey(req)
+      const { success, limit, remaining, reset } = await ratelimit.limit(clientKey)
+
+      if (!success) {
+        return new Response(
+          JSON.stringify({
+            error: 'Rate limit exceeded. Please try again later.',
+            limit,
+            remaining,
+            reset,
+          }),
+          {
+            status: 429,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': reset.toString(),
+            },
+          }
+        )
+      }
     }
     
     // Detect language
     const language = detectLanguage(message)
     
-    // Initialize clients
+    // Initialize Supabase
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     )
     
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+    // Generate embedding via AI Gateway
+    const { embedding: queryEmbedding } = await embed({
+      model: 'openai/text-embedding-3-small',
+      value: message,
     })
-    
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
-    
-    // Generate embedding for the query
-    const embeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: message,
-    })
-    
-    const queryEmbedding = embeddingResponse.data[0].embedding
     
     // Retrieve relevant chunks from knowledge base
     const { data: matches, error: matchError } = await supabase
@@ -159,48 +162,26 @@ IMPORTANT RULES:
 Context:
 ${context || 'No relevant information available.'}`
     
-    // Call Claude with streaming
-    const stream = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
+    // Stream response via AI Gateway with fallback
+    const result = streamText({
+      model: 'anthropic/claude-3-5-sonnet-20241022',
+      system: systemPrompt,
       messages: [
         {
           role: 'user',
           content: message,
         },
       ],
-      system: systemPrompt,
-      stream: true,
-    })
-    
-    // Stream response
-    const encoder = new TextEncoder()
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const event of stream) {
-            if (event.type === 'content_block_delta' && 
-                event.delta.type === 'text_delta') {
-              const text = event.delta.text
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`))
-            }
-          }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-          controller.close()
-        } catch (error) {
-          console.error('Stream error:', error)
-          controller.error(error)
-        }
+      maxOutputTokens: 1024,
+      temperature: 0.7,
+      providerOptions: {
+        gateway: {
+          models: ['openai/gpt-4o'], // Fallback model
+        },
       },
     })
     
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    })
+    return result.toTextStreamResponse()
     
   } catch (error) {
     console.error('Chat API error:', error)

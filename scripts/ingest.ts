@@ -3,10 +3,11 @@
 /**
  * Knowledge base ingestion script
  * Chunks and embeds content from homepage, blog posts, and knowledge files
+ * Uses Vercel AI Gateway for embeddings (no direct OpenAI SDK required)
  */
 
 import { createClient } from '@supabase/supabase-js'
-import OpenAI from 'openai'
+import { embedMany } from 'ai'
 import fs from 'fs/promises'
 import path from 'path'
 import { chunkText, chunkHomepageContent } from '../src/lib/chunking'
@@ -15,8 +16,10 @@ import { chunkText, chunkHomepageContent } from '../src/lib/chunking'
 const requiredEnvVars = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
-  'OPENAI_API_KEY'
 ]
+
+// Check AI Gateway auth (one of these is required)
+const hasGateway = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN
 
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
@@ -25,14 +28,16 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
+if (!hasGateway) {
+  console.error(`❌ Missing AI Gateway authentication:`)
+  console.error(`   Set either AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN`)
+  process.exit(1)
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!
-})
 
 interface KnowledgeEntry {
   content: string
@@ -43,25 +48,26 @@ interface KnowledgeEntry {
 }
 
 /**
- * Generate embeddings for an array of texts
+ * Generate embeddings via AI Gateway
  */
 async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   const batchSize = 100
-  const embeddings: number[][] = []
+  const allEmbeddings: number[][] = []
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize)
     console.log(`  Generating embeddings ${i + 1}-${Math.min(i + batchSize, texts.length)} of ${texts.length}...`)
     
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: batch,
+    // Use AI SDK embedMany with AI Gateway routing
+    const { embeddings } = await embedMany({
+      model: 'openai/text-embedding-3-small',
+      values: batch,
     })
     
-    embeddings.push(...response.data.map(d => d.embedding))
+    allEmbeddings.push(...embeddings)
   }
   
-  return embeddings
+  return allEmbeddings
 }
 
 /**
