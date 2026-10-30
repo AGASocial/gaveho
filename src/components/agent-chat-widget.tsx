@@ -1,36 +1,26 @@
 'use client'
 
+import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { useState, useRef, useEffect } from 'react'
 import { Send } from 'lucide-react'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
-
 export function AgentChatWidget() {
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: 'whoami',
-    },
-    {
-      role: 'assistant',
-      content: 'AI builder. Problem solver. Terminal enthusiast.',
-    },
-    {
-      role: 'assistant',
-      content: '> ask me anything',
-    },
-    {
-      role: 'assistant',
-      content: '(about code, AI, architecture, career, or random ideas)',
-    },
-  ])
-  const [isLoading, setIsLoading] = useState(false)
-  const [streamingMessage, setStreamingMessage] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const {
+    messages,
+    sendMessage,
+    status,
+    error,
+  } = useChat({
+    transport: new DefaultChatTransport({
+      api: '/api/chat',
+    }),
+  })
+
+  const isLoading = status === 'submitted'
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -38,7 +28,17 @@ export function AgentChatWidget() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages, streamingMessage])
+  }, [messages])
+
+  // Add initial greeting messages if no messages exist
+  const displayMessages = messages.length > 0
+    ? messages
+    : [
+        { id: '1', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'whoami' }] },
+        { id: '2', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'AI builder. Problem solver. Terminal enthusiast.' }] },
+        { id: '3', role: 'assistant' as const, parts: [{ type: 'text' as const, text: '> ask me anything' }] },
+        { id: '4', role: 'assistant' as const, parts: [{ type: 'text' as const, text: '(about code, AI, architecture, career, or random ideas)' }] },
+      ]
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,89 +46,11 @@ export function AgentChatWidget() {
 
     const userMessage = input.trim()
     setInput('')
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
-    setIsLoading(true)
-    setStreamingMessage('')
-
+    
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: userMessage }),
-      })
-
-      // Check if it's a fallback response (service unavailable)
-      if (response.status === 503) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: '🚧 Coming soon... Agent is still learning to type.',
-          },
-        ])
-        setIsLoading(false)
-        return
-      }
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to get response')
-      }
-
-      // Handle streaming response
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) {
-        throw new Error('No reader available')
-      }
-
-      let fullText = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            if (data === '[DONE]') {
-              break
-            }
-            try {
-              const parsed = JSON.parse(data)
-              if (parsed.text) {
-                fullText += parsed.text
-                setStreamingMessage(fullText)
-              }
-            } catch {
-              // Skip invalid JSON
-            }
-          }
-        }
-      }
-
-      // Add completed message
-      if (fullText) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: fullText }])
-      }
-      setStreamingMessage('')
-    } catch (error) {
-      console.error('Chat error:', error)
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: '❌ Sorry, something went wrong. Please try again.',
-        },
-      ])
-    } finally {
-      setIsLoading(false)
+      await sendMessage({ text: userMessage })
+    } catch (err) {
+      console.error('Chat error:', err)
     }
   }
 
@@ -144,24 +66,27 @@ export function AgentChatWidget() {
       </div>
 
       <div className="space-y-2 mb-3 max-h-96 overflow-y-auto">
-        {messages.map((msg, i) => (
+        {displayMessages.map((msg) => (
           <div
-            key={i}
+            key={msg.id}
             className={msg.role === 'user' ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-800 dark:text-gray-300'}
           >
             {msg.role === 'user' && <span className="text-cyan-700 dark:text-cyan-500">{'> '}</span>}
-            {msg.content}
+            {msg.parts.map((part, idx) =>
+              part.type === 'text' ? (
+                <span key={idx}>{part.text}</span>
+              ) : null
+            )}
           </div>
         ))}
-        {streamingMessage && (
-          <div className="text-gray-800 dark:text-gray-300">
-            {streamingMessage}
-            <span className="inline-block w-2 h-4 bg-cyan-700 dark:bg-cyan-500 animate-pulse ml-1" />
-          </div>
-        )}
-        {isLoading && !streamingMessage && (
+        {isLoading && (
           <div className="text-gray-600 dark:text-gray-500">
             <span className="animate-pulse">●</span> Thinking...
+          </div>
+        )}
+        {error && (
+          <div className="text-red-600 dark:text-red-400">
+            ❌ {error.message}
           </div>
         )}
         <div ref={messagesEndRef} />
