@@ -9,6 +9,13 @@ const skillGroups = [
 
 const projects = [
   {
+    name: 'Kari Decor',
+    url: 'https://karidecor.com',
+    description: 'E-commerce site for a Chicago business specializing in personalized gift trays (bandejas de regalo personalizadas) with flowers, treats and details. Features Instagram publishing integration.',
+    tags: ['Next.js', 'Vercel', 'Supabase', 'Instagram API'],
+    status: 'Live',
+  },
+  {
     name: 'CCTV Magic',
     url: 'https://cctvmagic.aga.social',
     description: 'AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora.',
