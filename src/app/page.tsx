@@ -118,7 +118,13 @@ export default function Home() {
             >
               <div className="flex items-start justify-between gap-2 mb-3">
                 <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition-colors">
-                  {p.name}
+                  {p.url && !p.url.includes('gaveho.com') ? (
+                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      {p.name} ↗
+                    </a>
+                  ) : (
+                    p.name
+                  )}
                 </h3>
                 <span className={`text-xs px-2 py-1 border-2 ${
                   p.status === 'Live'
