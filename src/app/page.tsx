@@ -114,17 +114,20 @@ export default function Home() {
           {projects.map((p) => (
             <div
               key={p.name}
-              className="border-2 border-emerald-600/30 dark:border-emerald-500/30 bg-gray-50 dark:bg-black/40 p-5 hover:border-cyan-600/60 dark:hover:border-cyan-500/60 transition-colors group"
+              className="relative border-2 border-emerald-600/30 dark:border-emerald-500/30 bg-gray-50 dark:bg-black/40 p-5 hover:border-cyan-600/60 dark:hover:border-cyan-500/60 transition-colors group"
             >
+              {p.url && !p.url.includes('gaveho.com') && (
+                <a
+                  href={p.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open ${p.name}`}
+                  className="absolute inset-0 z-10"
+                />
+              )}
               <div className="flex items-start justify-between gap-2 mb-3">
                 <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition-colors">
-                  {p.url && !p.url.includes('gaveho.com') ? (
-                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      {p.name} ↗
-                    </a>
-                  ) : (
-                    p.name
-                  )}
+                  {p.name}{p.url && !p.url.includes('gaveho.com') ? ' ↗' : ''}
                 </h3>
                 <span className={`text-xs px-2 py-1 border-2 ${
                   p.status === 'Live'
