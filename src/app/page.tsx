@@ -9,6 +9,13 @@ const skillGroups = [
 
 const projects = [
   {
+    name: 'Kari Decor',
+    url: 'https://karidecor.com',
+    description: 'E-commerce site for a Chicago business specializing in personalized gift trays (bandejas de regalo personalizadas) with flowers, treats and details. Features Instagram publishing integration.',
+    tags: ['Next.js', 'Vercel', 'Supabase', 'Instagram API'],
+    status: 'Live',
+  },
+  {
     name: 'gaveho.com',
     url: 'https://www.gaveho.com',
     description: 'Personal portfolio with a bilingual blog, a RAG-grounded \'ask my agent\' chat, and Cursor cloud coding agents building it.',

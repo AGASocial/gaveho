@@ -21,11 +21,10 @@ My core stack includes:
 
 ## What kind of projects are you working on?
 
-Right now I'm building:
-- **CCTV Magic**: An AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora. Built with Next.js, OpenAI Sora, Supabase, and Stripe.
-- **NeuraliticaBot**: A RAG-powered assistant that lets you chat with your files (PDF, DOCX, CSV, images). Built with Next.js, RAG, OpenAI, and Supabase.
-
-Both projects are currently in progress.
+I've recently completed and am currently building:
+- **Kari Decor**: An e-commerce website for a Chicago business specializing in personalized gift trays (bandejas de regalo personalizadas) with flowers, treats and details. Built with Next.js, Vercel, and Supabase, featuring an Instagram publishing integration. Live at https://karidecor.com
+- **CCTV Magic**: An AI SaaS that transforms security camera photos into hyperrealistic videos using OpenAI Sora. Built with Next.js, OpenAI Sora, Supabase, and Stripe. Currently in progress.
+- **NeuraliticaBot**: A RAG-powered assistant that lets you chat with your files (PDF, DOCX, CSV, images). Built with Next.js, RAG, OpenAI, and Supabase. Currently in progress.
 
 ## What's your work history?
 
