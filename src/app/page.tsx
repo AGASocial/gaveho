@@ -22,27 +22,6 @@ const projects = [
     tags: ['Next.js', 'Supabase (pgvector)', 'Claude', 'Vercel'],
     status: 'Live',
   },
-  {
-    name: 'Vercel AI SDK migration',
-    url: '#',
-    description: 'Moving the site\'s chat to the Vercel AI SDK with streaming (streamText/useChat), AI Gateway with provider fallback, and Upstash rate limiting.',
-    tags: ['AI SDK', 'AI Gateway', 'Anthropic', 'OpenAI', 'Upstash'],
-    status: 'In Progress',
-  },
-  {
-    name: 'Idea-to-draft blog flow',
-    url: '#',
-    description: 'Private admin where Gabriel drops topics, links or news; an agent finds relevant AI/dev news and generates EN/ES drafts plus a TikTok script, never auto-publishing.',
-    tags: ['Next.js', 'Claude', 'Supabase'],
-    status: 'In Progress',
-  },
-  {
-    name: 'Multi-account Instagram manager',
-    url: '#',
-    description: 'One place to connect several Instagram accounts via OAuth, store encrypted tokens with auto-refresh, and schedule posts, reusing publishing code from the Kari Decor project.',
-    tags: ['Instagram API', 'Supabase', 'Vercel Cron'],
-    status: 'In Progress',
-  },
 ]
 
 const experience = [
