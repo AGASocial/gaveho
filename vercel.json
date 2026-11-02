@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/internal/social-publisher", "schedule": "*/15 * * * *" },
+    { "path": "/api/internal/social-token-refresh", "schedule": "30 9 * * *" }
+  ]
+}

@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminSecretFromRequest, isValidAdminSecret } from '@/lib/admin-auth'
+import { requireAdminApi } from '@/lib/admin/auth'
 import { generateBlogDrafts } from '@/lib/generate'
 import { createIdea, updateIdeaStatus } from '@/lib/ideas'
 
 export async function POST(req: NextRequest) {
-  const secret = getAdminSecretFromRequest(req)
-  if (!isValidAdminSecret(secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
 
   try {
     const { topic, context, sourceUrl, notes, ideaId } = await req.json()

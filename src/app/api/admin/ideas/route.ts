@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminSecretFromRequest, isValidAdminSecret } from '@/lib/admin-auth'
+import { requireAdminApi } from '@/lib/admin/auth'
 import { createIdea, getIdeas, updateIdeaStatus } from '@/lib/ideas'
 
-function requireAuth(req: NextRequest): boolean {
-  const secret = getAdminSecretFromRequest(req)
-  return isValidAdminSecret(secret)
-}
-
 export async function GET(req: NextRequest) {
-  if (!requireAuth(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
 
   try {
     const { searchParams } = new URL(req.url)
@@ -25,9 +19,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!requireAuth(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
 
   try {
     const { topic, sourceUrl, notes } = await req.json()
@@ -45,9 +38,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!requireAuth(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
 
   try {
     const { id, status, postIds } = await req.json()
