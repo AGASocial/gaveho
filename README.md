@@ -38,11 +38,10 @@ AGENT_SECRET=your_random_secret_key
 ### Required for AI Chat Agent
 
 ```env
-# Anthropic (for chat responses and blog generation)
-ANTHROPIC_API_KEY=your_anthropic_api_key
-
-# OpenAI (for embeddings)
-OPENAI_API_KEY=your_openai_api_key
+# Vercel AI Gateway (chat, embeddings, and blog generation)
+# Locally: run `vercel env pull .env.local` to get VERCEL_OIDC_TOKEN,
+# or set an AI Gateway API key. No direct provider keys are needed.
+AI_GATEWAY_API_KEY=your_ai_gateway_api_key
 ```
 
 ### Optional: News Search (Admin Dashboard)
