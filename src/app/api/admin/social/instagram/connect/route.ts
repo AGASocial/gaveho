@@ -5,7 +5,7 @@ import { buildInstagramAuthorizeUrl, getInstagramOAuthConfig } from '@/lib/socia
 
 const STATE_COOKIE = 'gaveho_ig_oauth'
 
-// GET /api/admin/social/instagram/connect?label=Gabejo%20AI
+// GET /api/admin/social/instagram/connect?label=Gaveho%20AI
 export async function GET(request: Request) {
   if (!(await getActiveAdmin())) return NextResponse.redirect(new URL('/admin/login', request.url))
   if (!getInstagramOAuthConfig().configured) return NextResponse.redirect(new URL('/admin/social?error=not_configured', request.url))

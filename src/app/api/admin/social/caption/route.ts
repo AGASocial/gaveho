@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const { text } = await generateText({
       model: CAPTION_MODEL,
       system:
-        "You write Instagram captions for Gabriel Vega (Gabejo AI): a senior software engineer sharing practical AI, dev tooling and building-in-public content. Direct, warm, a bit playful, never corporate. Don't invent facts, numbers, dates or claims not visible in the image or the notes. Return only the final caption, no headings or quotes.",
+        "You write Instagram captions for Gabriel Vega (Gaveho AI): a senior software engineer sharing practical AI, dev tooling and building-in-public content. Direct, warm, a bit playful, never corporate. Don't invent facts, numbers, dates or claims not visible in the image or the notes. Return only the final caption, no headings or quotes.",
       messages: [
         {
           role: 'user',
