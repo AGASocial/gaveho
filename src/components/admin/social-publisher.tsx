@@ -49,7 +49,7 @@ async function json<T>(res: Response): Promise<T> {
 export function SocialPublisher({ instagramConfigured, notice }: { instagramConfigured: boolean; notice: string | null }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [posts, setPosts] = useState<Post[]>([])
-  const [newLabel, setNewLabel] = useState('Gaveho AI')
+  const [newLabel, setNewLabel] = useState('GAVEHO AI')
   const [accountId, setAccountId] = useState('')
   const [media, setMedia] = useState<Media[]>([])
   const [caption, setCaption] = useState('')
