@@ -244,3 +244,34 @@ Edit system prompts in `src/app/api/chat/route.ts` to change the agent's persona
 ## License
 
 Private project. © 2026 Gabriel Vega
+
+## Admin (Supabase Auth)
+
+`/admin/*` and `/api/admin/*` require a Supabase Auth user with an active row in
+`gaveho_admin_profiles` (`getActiveAdmin()` / `requireAdminApi()` in `src/lib/admin/auth.ts`).
+Login at `/admin/login` (password or magic link; magic links never create users).
+
+1. Supabase Dashboard → Authentication → Users → **Add user** (email + password, auto-confirm).
+2. Add `https://gaveho.com/admin/auth/confirm` to Auth → URL Configuration → Redirect URLs.
+3. Run in the SQL editor:
+
+```sql
+insert into public.gaveho_admin_profiles (user_id, display_name, is_active)
+select id, 'Gabriel Vega', true from auth.users where email = 'YOUR_EMAIL'
+on conflict (user_id) do update set is_active = true;
+```
+
+## Social publisher (`/admin/social`)
+
+Multi-account Instagram publishing (Instagram API with Instagram Login). Tokens are stored
+AES-256-GCM encrypted (`SOCIAL_TOKEN_ENCRYPTION_KEY`) in `gaveho_social_accounts`; posts live in
+`gaveho_social_posts` (draft / scheduled / publishing / published / failed). Images go to the public
+`gaveho-social` storage bucket. AI captions use Vercel AI Gateway (`anthropic/claude-sonnet-4.5`).
+Cron (`vercel.json`): `/api/internal/social-publisher` every 15 min and
+`/api/internal/social-token-refresh` daily, both protected by `CRON_SECRET`.
+
+Env vars: `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `INSTAGRAM_REDIRECT_URI` (optional),
+`INSTAGRAM_GRAPH_API_VERSION` (optional), `SOCIAL_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`.
+Meta redirect URI: `https://gaveho.com/api/admin/social/instagram/callback`.
+
+Tests: `npm test` (node:test via tsx).

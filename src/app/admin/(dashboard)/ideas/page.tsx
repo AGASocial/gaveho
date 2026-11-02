@@ -50,10 +50,6 @@ interface Draft {
 }
 
 export default function AdminIdeasPage() {
-  const [authenticated, setAuthenticated] = useState(false)
-  const [checkingAuth, setCheckingAuth] = useState(true)
-  const [secret, setSecret] = useState('')
-  const [loggingIn, setLoggingIn] = useState(false)
 
   const [topic, setTopic] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -76,14 +72,8 @@ export default function AdminIdeasPage() {
   const [publishingId, setPublishingId] = useState<string | null>(null)
 
   useEffect(() => {
-    checkAuthentication()
+    loadDrafts()
   }, [])
-
-  useEffect(() => {
-    if (authenticated) {
-      loadDrafts()
-    }
-  }, [authenticated])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'webkitSpeechRecognition' in window) {
@@ -124,43 +114,6 @@ export default function AdminIdeasPage() {
       setRecognition(recognitionInstance)
     }
   }, [])
-
-  async function checkAuthentication() {
-    try {
-      const res = await fetch('/api/admin/login')
-      const data = await res.json()
-      setAuthenticated(data.authenticated)
-    } catch (err) {
-      console.error('Auth check failed:', err)
-    } finally {
-      setCheckingAuth(false)
-    }
-  }
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setLoggingIn(true)
-
-    try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret }),
-      })
-
-      if (res.ok) {
-        setAuthenticated(true)
-        setSecret('')
-      } else {
-        alert('Invalid secret')
-      }
-    } catch (err) {
-      console.error('Login failed:', err)
-      alert('Login failed')
-    } finally {
-      setLoggingIn(false)
-    }
-  }
 
   function toggleRecording() {
     if (!recognition) {
@@ -319,45 +272,6 @@ export default function AdminIdeasPage() {
     } finally {
       setPublishingId(null)
     }
-  }
-
-  if (checkingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    )
-  }
-
-  if (!authenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Admin Login</CardTitle>
-            <CardDescription>Enter your secret to access the ideas dashboard</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <Label htmlFor="secret">Secret</Label>
-                <Input
-                  id="secret"
-                  type="password"
-                  value={secret}
-                  onChange={(e) => setSecret(e.target.value)}
-                  disabled={loggingIn}
-                  autoFocus
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loggingIn}>
-                {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Login'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   return (

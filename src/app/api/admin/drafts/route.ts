@@ -1,12 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getAdminSecretFromRequest, isValidAdminSecret } from '@/lib/admin-auth'
+import { NextResponse } from 'next/server'
+import { requireAdminApi } from '@/lib/admin/auth'
 import { getDrafts } from '@/lib/drafts'
 
-export async function GET(req: NextRequest) {
-  const secret = getAdminSecretFromRequest(req)
-  if (!isValidAdminSecret(secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export async function GET() {
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
 
   try {
     const drafts = await getDrafts()

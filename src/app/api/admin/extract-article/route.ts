@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminSecretFromRequest, isValidAdminSecret } from '@/lib/admin-auth'
+import { requireAdminApi } from '@/lib/admin/auth'
 
 export async function POST(req: NextRequest) {
-  const secret = getAdminSecretFromRequest(req)
-  if (!isValidAdminSecret(secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
 
   try {
     const { url } = await req.json()
