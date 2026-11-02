@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { generateText } from 'ai'
 import slugify from 'slugify'
 import { savePost } from './posts'
 
@@ -31,20 +31,21 @@ Return ONLY a valid JSON object with this exact shape:
 }`
 }
 
+// Routed through Vercel AI Gateway (auth via VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY)
+const MODEL = 'anthropic/claude-sonnet-4.5'
+
 async function generatePost(
-  anthropic: Anthropic,
   topic: string,
   context: string | undefined,
   lang: 'en' | 'es'
 ) {
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
-    max_tokens: 4096,
+  const { text: raw } = await generateText({
+    model: MODEL,
+    maxOutputTokens: 4096,
     system: lang === 'es' ? SYSTEM_ES : SYSTEM_EN,
-    messages: [{ role: 'user', content: buildPrompt(topic, context, lang) }],
+    prompt: buildPrompt(topic, context, lang),
   })
 
-  const raw = (message.content[0] as { type: string; text: string }).text
   const jsonStr = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
   return JSON.parse(jsonStr)
 }
@@ -85,12 +86,10 @@ export async function generateBlogDrafts(
   topic: string,
   context?: string
 ): Promise<GeneratedDrafts> {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-
   // Generate both EN and ES in parallel
   const [generatedEn, generatedEs] = await Promise.all([
-    generatePost(anthropic, topic, context, 'en'),
-    generatePost(anthropic, topic, context, 'es'),
+    generatePost(topic, context, 'en'),
+    generatePost(topic, context, 'es'),
   ])
 
   const slugEn = slugify(generatedEn.title, { lower: true, strict: true })

@@ -66,7 +66,7 @@ UPSTASH_REDIS_REST_TOKEN=xxx
 ```bash
 # ❌ Not needed - AI Gateway handles provider routing
 OPENAI_API_KEY
-ANTHROPIC_API_KEY  # Still needed for /api/agent (post generator)
+ANTHROPIC_API_KEY  # Blog generation (src/lib/generate.ts) now also uses AI Gateway
 ```
 
 ## Dependencies
@@ -79,7 +79,7 @@ ANTHROPIC_API_KEY  # Still needed for /api/agent (post generator)
 
 ### Removed
 - `openai` - Replaced by AI SDK with gateway routing
-- `@anthropic-ai/sdk` - Only used in `/api/agent` (post generator) now
+- `@anthropic-ai/sdk` - Blog generation migrated to AI SDK + gateway
 
 ## Files Changed
 
@@ -136,7 +136,7 @@ Embeddings: `openai/text-embedding-3-small` (1536 dimensions)
 
 ### Breaking Changes
 - **Environment Variables**: Must set `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN`
-- **No Direct Provider Keys**: `OPENAI_API_KEY` no longer used for chat (still needed for `/api/agent`)
+- **No Direct Provider Keys**: `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are no longer used anywhere
 
 ### Non-Breaking
 - **Database Schema**: No changes to `gaveho_knowledge` table
