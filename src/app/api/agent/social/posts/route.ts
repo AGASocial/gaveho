@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
 import { findAccount } from '@/lib/social/accounts'
-import { requireAgentApi } from '@/lib/social/agent-auth'
+import { requireAgentApi, scopeAllows } from '@/lib/social/agent-auth'
 import { type ImageInput, ingestImage, ingestVideo, type VideoInput } from '@/lib/social/media'
 import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
@@ -16,8 +16,8 @@ const err = (status: number, error: string) => NextResponse.json({ error }, { st
 
 // GET ?status=&account=&limit= — recent posts.
 export async function GET(request: Request) {
-  const denied = requireAgentApi(request)
-  if (denied) return denied
+  const scope = await requireAgentApi(request)
+  if (scope instanceof NextResponse) return scope
   const params = new URL(request.url).searchParams
   const status = params.get('status') ?? undefined
   if (status && !STATUSES.includes(status)) return err(422, `status must be one of ${STATUSES.join(', ')}.`)
@@ -26,11 +26,12 @@ export async function GET(request: Request) {
   if (accountRef) {
     const account = await findAccount(accountRef)
     if (!account) return err(404, 'Account not found.')
+    if (!scopeAllows(scope, account.id)) return err(403, 'This API key is not allowed to access that account.')
     accountId = account.id
   }
   const limit = Math.min(Math.max(Number(params.get('limit')) || 20, 1), 100)
   try {
-    return NextResponse.json({ posts: await listSocialPosts({ status, accountId, limit }) }, { headers: noStoreHeaders })
+    return NextResponse.json({ posts: await listSocialPosts({ status, accountId, accountIds: scope.accountIds ?? undefined, limit }) }, { headers: noStoreHeaders })
   } catch (e) {
     return err(e instanceof PostError ? e.status : 500, 'Could not load posts.')
   }
@@ -41,13 +42,14 @@ export async function GET(request: Request) {
 //        images: [url | {data, contentType}]                          (type 'image')
 //        video | video_url: url | {data, contentType}, cover?, thumb_offset?, share_to_feed?  (type 'reel') }
 export async function POST(request: Request) {
-  const denied = requireAgentApi(request)
-  if (denied) return denied
+  const scope = await requireAgentApi(request)
+  if (scope instanceof NextResponse) return scope
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
   if (!body || typeof body !== 'object') return err(400, 'Body must be JSON.')
   if (typeof body.account !== 'string') return err(422, 'account is required (username or id).')
   const account = await findAccount(body.account)
   if (!account) return err(404, 'Account not found.')
+  if (!scopeAllows(scope, account.id)) return err(403, 'This API key is not allowed to post to that account.')
   if (!account.is_active) return err(422, 'Account is disabled.')
   const type = body.type ?? body.media_type ?? 'image'
   if (type !== 'image' && type !== 'reel') return err(422, "type must be 'image' or 'reel'.")

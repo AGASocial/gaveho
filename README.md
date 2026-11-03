@@ -276,6 +276,6 @@ Cron (`vercel.json`): `/api/internal/social-publisher` every 15 min and
 The token-refresh cron only refreshes Instagram-login tokens with a known expiry; non-expiring
 tokens are skipped.
 
-Env vars: `SOCIAL_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `SOCIAL_AGENT_API_KEY` (agent API, see `docs/agent-social-api.md`), `META_GRAPH_API_VERSION` (optional, default `v23.0`).
+Env vars: `SOCIAL_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `SOCIAL_AGENT_API_KEY` (deprecated all-accounts agent key; prefer scoped keys from `/admin/social`, see `docs/agent-social-api.md`), `META_GRAPH_API_VERSION` (optional, default `v23.0`).
 
 Tests: `npm test` (node:test via tsx).
