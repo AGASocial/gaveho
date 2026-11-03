@@ -148,7 +148,7 @@ async function waitForContainer(token: Api, containerId: string) {
   throw new Error('Meta media container timed out while processing.')
 }
 
-async function publishContainer(token: Api, igUserId: string, containerId: string) {
+export async function publishContainer(token: Api, igUserId: string, containerId: string) {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await metaRequest<{ id: string }>(token, `${igUserId}/media_publish`, new URLSearchParams({ creation_id: containerId }))
@@ -182,5 +182,48 @@ export async function publishInstagramMedia(input: { token: string; host: ApiHos
   await waitForContainer(token, containerId)
   const published = await publishContainer(token, igUserId, containerId)
   const media = await metaRequest<{ id: string; permalink?: string }>(token, `${published.id}?fields=id,permalink`).catch(() => ({ id: published.id, permalink: undefined }))
+  return { mediaId: published.id, permalink: media.permalink ?? null }
+}
+
+// ── Reels ────────────────────────────────────────────────────────────────────
+// Video processing at Meta can take minutes, so reels are published in steps:
+// create container → poll status_code within a time budget → media_publish.
+// If processing outlasts the budget, the caller keeps the post in 'publishing'
+// with its container_id and the cron resumes polling later.
+
+export type ReelContainerInput = { videoUrl: string; caption: string; coverUrl?: string | null; thumbOffset?: number | null; shareToFeed: boolean }
+
+/** Same params on graph.facebook.com and graph.instagram.com. */
+export async function createReelContainer(input: { token: string; host: ApiHost; igUserId: string } & ReelContainerInput) {
+  const params = new URLSearchParams({
+    media_type: 'REELS',
+    video_url: input.videoUrl,
+    caption: input.caption,
+    share_to_feed: String(input.shareToFeed),
+  })
+  if (input.coverUrl) params.set('cover_url', input.coverUrl)
+  else if (input.thumbOffset != null) params.set('thumb_offset', String(input.thumbOffset))
+  const { id } = await metaRequest<{ id: string }>({ token: input.token, host: input.host }, `${input.igUserId}/media`, params)
+  return id
+}
+
+/** Polls a container until FINISHED or the budget runs out. Throws on ERROR/EXPIRED. */
+export async function waitForReelContainer(api: { token: string; host: ApiHost }, containerId: string, budgetMs: number, intervalMs = 5000) {
+  const deadline = Date.now() + budgetMs
+  for (;;) {
+    const c = await metaRequest<{ status_code?: string; status?: string }>(api, `${containerId}?fields=status_code,status`)
+    if (c.status_code === 'FINISHED' || c.status_code === 'PUBLISHED') return 'finished' as const
+    if (c.status_code === 'ERROR' || c.status_code === 'EXPIRED') {
+      throw new Error(`Instagram could not process the video (${c.status_code}${c.status ? `: ${c.status}` : ''}). Check codec (H.264/HEVC + AAC), 3 s–15 min, ≤ 300 MB.`)
+    }
+    if (Date.now() + intervalMs > deadline) return 'in_progress' as const
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+}
+
+export async function publishReelContainer(input: { token: string; host: ApiHost; igUserId: string; containerId: string }) {
+  const api: Api = { token: input.token, host: input.host }
+  const published = await publishContainer(api, input.igUserId, input.containerId)
+  const media = await metaRequest<{ id: string; permalink?: string }>(api, `${published.id}?fields=id,permalink`).catch(() => ({ id: published.id, permalink: undefined }))
   return { mediaId: published.id, permalink: media.permalink ?? null }
 }

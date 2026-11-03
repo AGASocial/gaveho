@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { decryptToken, encryptToken } from './crypto'
-import { type ApiHost, publishInstagramMedia, refreshLongLivedToken } from './instagram'
+import { type ApiHost, createReelContainer, publishInstagramMedia, publishReelContainer, refreshLongLivedToken, waitForReelContainer } from './instagram'
 
 export const SOCIAL_BUCKET = 'gaveho-social'
 export const ACCOUNT_PUBLIC_COLUMNS = 'id,platform,api_host,label,ig_user_id,username,caption_voice,token_expires_at,token_refreshed_at,is_active,created_at,updated_at'
@@ -24,27 +24,87 @@ async function loadAccountWithToken(accountId: string) {
   return { ...data, token: decryptToken(data.access_token_encrypted) }
 }
 
+export type ClaimedPost = {
+  id: string
+  account_id: string
+  caption: string
+  media_urls: string[]
+  media_type?: 'image' | 'reel' | string | null
+  cover_url?: string | null
+  thumb_offset?: number | null
+  share_to_feed?: boolean | null
+  container_id?: string | null
+  container_created_at?: string | null
+}
+
+export type PublishResult =
+  | { id: string; status: 'published'; permalink: string | null; mediaId: string }
+  | { id: string; status: 'publishing'; containerId: string; message: string }
+  | { id: string; status: 'failed'; error: string }
+
+/** Meta media containers expire after 24 h. */
+const CONTAINER_TTL_MS = 23 * 60 * 60 * 1000
+export const REEL_INLINE_WAIT_MS = 40_000
+
 /**
  * Publishes a post that the caller has already moved to status 'publishing'
- * (claimed atomically), then records the outcome.
+ * (claimed atomically), then records the outcome. Reels that are still processing at Meta
+ * after `reelWaitMs` stay in 'publishing' with their container_id; the cron resumes them.
  */
-export async function publishClaimedPost(post: { id: string; account_id: string; caption: string; media_urls: string[] }) {
+export async function publishClaimedPost(post: ClaimedPost, opts: { reelWaitMs?: number } = {}): Promise<PublishResult> {
   const db = supabaseAdmin()
   try {
     const account = await loadAccountWithToken(post.account_id)
-    const result = await publishInstagramMedia({ token: account.token, host: account.api_host ?? 'instagram', igUserId: account.ig_user_id!, imageUrls: post.media_urls, caption: post.caption })
+    const api = { token: account.token, host: account.api_host ?? 'instagram' }
+    let result: { mediaId: string; permalink: string | null }
+    if (post.media_type === 'reel') {
+      let containerId = post.container_id ?? null
+      if (containerId && post.container_created_at && Date.now() - new Date(post.container_created_at).getTime() > CONTAINER_TTL_MS) {
+        throw new Error('Instagram media container expired before the video finished processing. Retry to upload again.')
+      }
+      if (!containerId) {
+        containerId = await createReelContainer({
+          ...api,
+          igUserId: account.ig_user_id!,
+          videoUrl: post.media_urls[0],
+          caption: post.caption,
+          coverUrl: post.cover_url,
+          thumbOffset: post.thumb_offset,
+          shareToFeed: post.share_to_feed ?? true,
+        })
+        const { error } = await db
+          .from('gaveho_social_posts')
+          .update({ container_id: containerId, container_created_at: new Date().toISOString() })
+          .eq('id', post.id)
+          .eq('status', 'publishing')
+        if (error) throw error
+      }
+      const state = await waitForReelContainer(api, containerId, opts.reelWaitMs ?? REEL_INLINE_WAIT_MS)
+      if (state === 'in_progress') {
+        await db.from('gaveho_social_posts').update({ last_attempt_at: new Date().toISOString() }).eq('id', post.id).eq('status', 'publishing')
+        return { id: post.id, status: 'publishing', containerId, message: 'Instagram is still processing the video; the publisher cron will finish it (runs every 15 minutes).' }
+      }
+      result = await publishReelContainer({ ...api, igUserId: account.ig_user_id!, containerId })
+    } else {
+      result = await publishInstagramMedia({ ...api, igUserId: account.ig_user_id!, imageUrls: post.media_urls, caption: post.caption })
+    }
     const { error } = await db
       .from('gaveho_social_posts')
       .update({ status: 'published', published_media_id: result.mediaId, published_permalink: result.permalink, published_at: new Date().toISOString(), error: null })
       .eq('id', post.id)
       .eq('status', 'publishing')
     if (error) throw error
-    return { id: post.id, status: 'published' as const, permalink: result.permalink, mediaId: result.mediaId }
+    return { id: post.id, status: 'published', permalink: result.permalink, mediaId: result.mediaId }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Publishing failed.'
     console.error('[social] publish failed', { postId: post.id, message })
-    await db.from('gaveho_social_posts').update({ status: 'failed', error: message.slice(0, 1000) }).eq('id', post.id).eq('status', 'publishing')
-    return { id: post.id, status: 'failed' as const, error: message }
+    // Drop the container so a retry starts with a fresh one.
+    await db
+      .from('gaveho_social_posts')
+      .update({ status: 'failed', error: message.slice(0, 1000), container_id: null, container_created_at: null })
+      .eq('id', post.id)
+      .eq('status', 'publishing')
+    return { id: post.id, status: 'failed', error: message }
   }
 }
 

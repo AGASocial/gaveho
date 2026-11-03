@@ -35,3 +35,16 @@ test('rejects bad account id and too many images', () => {
   assert.equal(parseCreatePost({ ...base, accountId: 'nope' }, prefix, now).ok, false)
   assert.equal(parseCreatePost({ ...base, mediaUrls: Array(11).fill(prefix + 'a.jpg') }, prefix, now).ok, false)
 })
+
+test('reels: one mp4/mov video, optional cover/thumb offset, share_to_feed default true', () => {
+  const reel = { ...base, mediaType: 'reel', mediaUrls: [prefix + 'reels/2026/11/v.mp4'] }
+  const ok = parseCreatePost(reel, prefix, now)
+  assert.ok(ok.ok && ok.value.mediaType === 'reel' && ok.value.shareToFeed === true && ok.value.coverUrl === null)
+  const full = parseCreatePost({ ...reel, coverUrl: prefix + 'posts/c.jpg', thumbOffset: 1500, shareToFeed: false }, prefix, now)
+  assert.ok(full.ok && full.value.thumbOffset === 1500 && full.value.shareToFeed === false)
+  assert.equal(parseCreatePost({ ...reel, mediaUrls: [prefix + 'a.mp4', prefix + 'b.mp4'] }, prefix, now).ok, false)
+  assert.equal(parseCreatePost({ ...reel, mediaUrls: [prefix + 'posts/a.jpg'] }, prefix, now).ok, false)
+  assert.equal(parseCreatePost({ ...reel, coverUrl: 'https://evil.example/c.jpg' }, prefix, now).ok, false)
+  assert.equal(parseCreatePost({ ...reel, thumbOffset: -1 }, prefix, now).ok, false)
+  assert.equal(parseCreatePost({ ...base, mediaUrls: [prefix + 'reels/v.mp4'] }, prefix, now).ok, false)
+})

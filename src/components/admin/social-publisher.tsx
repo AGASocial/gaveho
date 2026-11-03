@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Sparkles, Trash2, Upload } from 'lucide-react'
+import { Film, Loader2, Sparkles, Trash2, Upload } from 'lucide-react'
 import { prepareInstagramJpeg } from '@/lib/social/image-upload'
+import { supabase } from '@/lib/supabase'
 
 type Account = {
   id: string
@@ -24,6 +25,8 @@ type Post = {
   id: string
   caption: string
   media_urls: string[]
+  media_type?: 'image' | 'reel'
+  cover_url?: string | null
   status: 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed'
   scheduled_at: string | null
   published_at: string | null
@@ -33,6 +36,8 @@ type Post = {
   account: { label: string; username: string | null } | null
 }
 type Media = { mediaUrl: string; mediaPath: string }
+type VideoMedia = Media & { info: { durationSeconds: number; width: number; height: number; sizeBytes: number; warnings: string[] } }
+const MAX_VIDEO_BYTES = 300 * 1024 * 1024
 
 const statusColor: Record<Post['status'], string> = {
   draft: 'bg-zinc-600',
@@ -56,6 +61,11 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
   const [newIgId, setNewIgId] = useState('')
   const [accountId, setAccountId] = useState('')
   const [media, setMedia] = useState<Media[]>([])
+  const [postType, setPostType] = useState<'image' | 'reel'>('image')
+  const [video, setVideo] = useState<VideoMedia | null>(null)
+  const [cover, setCover] = useState<Media | null>(null)
+  const [thumbSeconds, setThumbSeconds] = useState('')
+  const [shareToFeed, setShareToFeed] = useState(true)
   const [caption, setCaption] = useState('')
   const [hint, setHint] = useState('')
   const [language, setLanguage] = useState<'en' | 'es'>('en')
@@ -104,14 +114,40 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
       }
     })
 
+  // Videos go browser → Supabase Storage via a signed upload URL (too big for a function body), then get verified.
+  const onVideo = (file: File | undefined) =>
+    run('video', async () => {
+      if (!file) return
+      if (!['video/mp4', 'video/quicktime'].includes(file.type)) throw new Error('Reels must be MP4 or MOV.')
+      if (file.size > MAX_VIDEO_BYTES) throw new Error('Video must be 300 MB or smaller.')
+      const post = (body: object) =>
+        fetch('/api/admin/social/upload-video', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      const signed = await json<{ path: string; token: string }>(await post({ action: 'sign', contentType: file.type, size: file.size }))
+      const { error } = await supabase().storage.from('gaveho-social').uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type })
+      if (error) throw new Error(`Upload failed: ${error.message}`)
+      setVideo(await json<VideoMedia>(await post({ action: 'verify', path: signed.path })))
+    })
+
+  const onCover = (file: File | undefined) =>
+    run('cover', async () => {
+      if (!file) return
+      const body = new FormData()
+      body.set('image', await prepareInstagramJpeg(file))
+      setCover(await json<Media>(await fetch('/api/admin/social/upload', { method: 'POST', body })))
+    })
+
+  const isReel = postType === 'reel'
+  const hasMedia = isReel ? !!video : media.length > 0
+  const captionSource = isReel ? cover : media[0]
+
   const genCaption = () =>
     run('caption', async () => {
-      if (!media[0]) throw new Error('Upload an image first.')
+      if (!captionSource) throw new Error(isReel ? 'Add a cover image to generate a caption.' : 'Upload an image first.')
       const r = await json<{ caption: string }>(
         await fetch('/api/admin/social/caption', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mediaPath: media[0].mediaPath, hint, language, accountId }),
+          body: JSON.stringify({ mediaPath: captionSource.mediaPath, hint, language, accountId }),
         })
       )
       setCaption(r.caption)
@@ -120,31 +156,40 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
   const submit = (mode: 'draft' | 'schedule' | 'now') =>
     run(mode, async () => {
       if (mode === 'now' && !confirm('Publish to Instagram now?')) return
-      await json(
+      const res = await json<{ result?: { status: string; message?: string } }>(
         await fetch('/api/admin/social/posts', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             accountId,
             caption,
-            mediaUrls: media.map((m) => m.mediaUrl),
+            mediaType: postType,
+            mediaUrls: isReel ? (video ? [video.mediaUrl] : []) : media.map((m) => m.mediaUrl),
+            ...(isReel
+              ? { coverUrl: cover?.mediaUrl ?? null, thumbOffset: thumbSeconds ? Math.round(Number(thumbSeconds) * 1000) : null, shareToFeed }
+              : {}),
             mode,
             scheduledAt: mode === 'schedule' && scheduledAt ? new Date(scheduledAt).toISOString() : null,
           }),
         })
       )
       setMedia([])
+      setVideo(null)
+      setCover(null)
+      setThumbSeconds('')
+      setShareToFeed(true)
       setCaption('')
       setHint('')
       setScheduledAt('')
-      setMessage(mode === 'now' ? 'Published.' : mode === 'schedule' ? 'Scheduled.' : 'Draft saved.')
+      setMessage(res.result?.status === 'publishing' ? res.result.message ?? 'Processing…' : mode === 'now' ? 'Published.' : mode === 'schedule' ? 'Scheduled.' : 'Draft saved.')
       await load()
     })
 
   const publishExisting = (id: string) =>
     run(`pub-${id}`, async () => {
       if (!confirm('Publish this post now?')) return
-      await json(await fetch(`/api/admin/social/posts/${id}/publish`, { method: 'POST' }))
+      const r = await json<{ status?: string; message?: string }>(await fetch(`/api/admin/social/posts/${id}/publish`, { method: 'POST' }))
+      if (r.status === 'publishing') setMessage(r.message ?? 'Instagram is still processing the video.')
       await load()
     })
 
@@ -327,6 +372,69 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
             </select>
           </div>
 
+          <div className="flex gap-2" role="radiogroup" aria-label="post type">
+            {(['image', 'reel'] as const).map((t) => (
+              <Button key={t} type="button" size="sm" variant={postType === t ? 'default' : 'outline'} onClick={() => setPostType(t)}>
+                {t === 'image' ? 'Image / carousel' : 'Reel'}
+              </Button>
+            ))}
+          </div>
+
+          {isReel ? (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Video (MP4/MOV, 3 s–15 min, ≤ 300 MB, 9:16 recommended)</Label>
+                {video ? (
+                  <div className="flex gap-3 items-start">
+                    <video src={video.mediaUrl} controls muted className="h-48 rounded border border-border" />
+                    <div className="text-xs space-y-1">
+                      <p>
+                        {video.info.durationSeconds.toFixed(1)} s · {video.info.width}×{video.info.height} · {(video.info.sizeBytes / 1024 / 1024).toFixed(1)} MB
+                      </p>
+                      {video.info.warnings.map((w) => (
+                        <p key={w} className="text-yellow-500">{w}</p>
+                      ))}
+                      <Button size="sm" variant="ghost" onClick={() => setVideo(null)}>
+                        <Trash2 className="h-3 w-3" /> remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="h-24 w-40 flex flex-col items-center justify-center border border-dashed border-border rounded cursor-pointer text-xs text-muted-foreground">
+                    {busy === 'video' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+                    {busy === 'video' ? 'uploading…' : 'add video'}
+                    <input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={(e) => onVideo(e.target.files?.[0])} />
+                  </label>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-4 items-end">
+                <div className="space-y-1">
+                  <Label>Cover image (optional)</Label>
+                  {cover ? (
+                    <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cover.mediaUrl} alt="cover" className="h-24 w-16 object-cover rounded border border-border" />
+                      <button type="button" className="absolute top-1 right-1 bg-black/70 rounded p-1" onClick={() => setCover(null)} aria-label="remove cover">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="h-24 w-16 flex flex-col items-center justify-center border border-dashed border-border rounded cursor-pointer text-xs text-muted-foreground">
+                      {busy === 'cover' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => onCover(e.target.files?.[0])} />
+                    </label>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="thumb">Thumbnail at (seconds, if no cover)</Label>
+                  <Input id="thumb" type="number" min={0} step={0.1} className="w-32" value={thumbSeconds} disabled={!!cover} onChange={(e) => setThumbSeconds(e.target.value)} />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={shareToFeed} onChange={(e) => setShareToFeed(e.target.checked)} /> Also share to feed
+                </label>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-2">
             <Label>Images (1 = single post, 2–10 = carousel)</Label>
             <div className="flex flex-wrap gap-2">
@@ -353,6 +461,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
               ) : null}
             </div>
           </div>
+          )}
 
           <div className="grid gap-2 md:grid-cols-[1fr_auto_auto] items-end">
             <div className="space-y-1">
@@ -368,7 +477,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
               <option value="en">EN</option>
               <option value="es">ES</option>
             </select>
-            <Button variant="outline" onClick={genCaption} disabled={busy !== null || !media.length}>
+            <Button variant="outline" onClick={genCaption} disabled={busy !== null || !captionSource}>
               {busy === 'caption' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI caption
             </Button>
           </div>
@@ -379,17 +488,17 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
           </div>
 
           <div className="flex flex-wrap gap-2 items-end">
-            <Button variant="outline" onClick={() => submit('draft')} disabled={busy !== null || !accountId || !media.length}>
+            <Button variant="outline" onClick={() => submit('draft')} disabled={busy !== null || !accountId || !hasMedia}>
               Save draft
             </Button>
             <div className="space-y-1">
               <Label htmlFor="when">Schedule for (your local time)</Label>
               <Input id="when" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
             </div>
-            <Button variant="outline" onClick={() => submit('schedule')} disabled={busy !== null || !accountId || !media.length || !scheduledAt}>
+            <Button variant="outline" onClick={() => submit('schedule')} disabled={busy !== null || !accountId || !hasMedia || !scheduledAt}>
               Schedule
             </Button>
-            <Button onClick={() => submit('now')} disabled={busy !== null || !accountId || !media.length || !caption.trim()}>
+            <Button onClick={() => submit('now')} disabled={busy !== null || !accountId || !hasMedia || !caption.trim()}>
               {busy === 'now' ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Publish now
             </Button>
           </div>
@@ -405,11 +514,16 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
           <ul className="space-y-3">
             {posts.map((p) => (
               <li key={p.id} className="flex gap-3 border-b border-border pb-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.media_urls[0]} alt="" className="h-16 w-16 object-cover rounded" />
+                {p.media_type === 'reel' && !p.cover_url ? (
+                  <video src={p.media_urls[0]} muted preload="metadata" className="h-16 w-16 object-cover rounded" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.media_type === 'reel' ? p.cover_url! : p.media_urls[0]} alt="" className="h-16 w-16 object-cover rounded" />
+                )}
                 <div className="flex-1 min-w-0 text-sm space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge className={statusColor[p.status]}>{p.status}</Badge>
+                    {p.media_type === 'reel' ? <Badge className="bg-purple-600">reel</Badge> : null}
                     <span className="text-muted-foreground">{p.account?.label}</span>
                     {p.media_urls.length > 1 ? <span className="text-muted-foreground">{p.media_urls.length} images</span> : null}
                     {p.scheduled_at && p.status === 'scheduled' ? (

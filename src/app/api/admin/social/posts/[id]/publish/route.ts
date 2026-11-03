@@ -16,13 +16,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!current.caption?.trim()) return NextResponse.json({ error: 'Add a caption first.' }, { status: 422, headers: noStoreHeaders })
   const { data: post, error } = await db
     .from('gaveho_social_posts')
-    .update({ status: 'publishing', error: null, publish_attempts: (current.publish_attempts ?? 0) + 1, last_attempt_at: new Date().toISOString() })
+    .update({ status: 'publishing', error: null, publish_attempts: (current.publish_attempts ?? 0) + 1, last_attempt_at: new Date().toISOString(), container_id: null, container_created_at: null })
     .eq('id', id)
     .in('status', ['draft', 'scheduled', 'failed'])
-    .select('id,account_id,caption,media_urls')
+    .select('id,account_id,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,container_id,container_created_at')
     .maybeSingle()
   if (error) return NextResponse.json({ error: 'Could not claim post.' }, { status: 500, headers: noStoreHeaders })
   if (!post) return NextResponse.json({ error: 'Post is already publishing or published.' }, { status: 409, headers: noStoreHeaders })
   const result = await publishClaimedPost(post)
-  return NextResponse.json(result, { status: result.status === 'published' ? 200 : 502, headers: noStoreHeaders })
+  return NextResponse.json(result, { status: result.status === 'published' ? 200 : result.status === 'publishing' ? 202 : 502, headers: noStoreHeaders })
 }

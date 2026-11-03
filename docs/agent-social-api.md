@@ -65,6 +65,30 @@ Responses:
 Vercel limits request bodies to about 4.5 MB. For large or multiple images, send URLs instead of base64.
 Scheduled posts are published by the `/api/internal/social-publisher` cron, which runs every 15 minutes.
 
+## Reels
+
+Same endpoint, `POST /api/agent/social/posts`, with `"type": "reel"` (alias `media_type`).
+
+| field | |
+|---|---|
+| `video` / `video_url` | **required**. Public https URL, or `{ "data": "<base64>", "contentType": "video/mp4" \| "video/quicktime" }` (base64 only for small files: Vercel caps request bodies at ~4.5 MB) |
+| `cover` / `cover_url` | optional cover image (same formats as `images[]`, stored as JPEG) |
+| `thumb_offset` | optional, milliseconds into the video for the thumbnail (ignored when `cover` is set) |
+| `share_to_feed` | optional, default `true` |
+
+The video is validated and stored as-is (no transcoding): MP4 or MOV, 3 s–15 min, ≤ 300 MB, must contain a video track. Non-9:16 videos are accepted with a `warnings` entry. Invalid videos return `422` with a clear message.
+
+```bash
+curl -sS -X POST "$BASE/api/agent/social/posts" -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"account":"gaveho","type":"reel","video_url":"https://example.com/clip.mp4","caption":"…","thumb_offset":2000,"mode":"publish_now"}'
+```
+
+Publishing a reel: we create a `REELS` container, then poll Meta's `status_code` for up to ~60 s.
+
+- `201` + `permalink`: published.
+- `202` + `status: "publishing"`: Meta is still processing the video. The post keeps its `container_id`; the publisher cron (every 15 min) resumes polling and publishes it. Check with `GET /api/agent/social/posts`.
+- `502` + `error`: Meta returned `ERROR`/`EXPIRED` (or another failure). The post is `failed`; containers older than ~23 h are treated as expired.
+
 ## List posts
 
 ```bash

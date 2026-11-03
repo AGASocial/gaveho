@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   try {
     const { post, result } = await createSocialPost(parsed.value, admin.id)
     if (!result) return NextResponse.json({ post }, { headers: noStoreHeaders })
-    return NextResponse.json({ post: { ...post, ...result } }, { status: result.status === 'published' ? 200 : 502, headers: noStoreHeaders })
+    return NextResponse.json({ post: { ...post, ...result } }, { status: result.status === 'published' ? 200 : result.status === 'publishing' ? 202 : 502, headers: noStoreHeaders })
   } catch (e) {
     const status = e instanceof PostError ? e.status : 500
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Could not save post.' }, { status, headers: noStoreHeaders })

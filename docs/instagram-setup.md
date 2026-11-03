@@ -39,6 +39,15 @@ En **Casos de uso → Administrar mensajes y contenido en Instagram → API setu
    obtiene el usuario e ID de Instagram, y lo guarda cifrado. Si la cuenta ya existe, se reemplaza su token.
 4. Para quitar una cuenta usa **remove** (borra también sus posts guardados) o **disable** para pausarla.
 
+## Reels
+
+En `/admin/social`, elige **Reel**: sube un video MP4/MOV (3 s–15 min, ≤ 300 MB, 9:16 recomendado), opcionalmente una portada o el segundo de la miniatura, y "Also share to feed" (activado por defecto). No se transcodifica: si el archivo no cumple, se rechaza con un error claro.
+
+- El video sube directo del navegador a Supabase Storage (bucket `gaveho-social`, carpeta `reels/`) con una URL firmada, porque Vercel limita el cuerpo de las funciones a ~4.5 MB.
+- El bucket acepta `image/jpeg`, `video/mp4` y `video/quicktime` hasta 300 MB (migración `20261103100000_gaveho_social_reels.sql`). **Además**, Supabase tiene un límite global de subida por proyecto (Dashboard → Storage → Settings → "Upload file size limit", 50 MB por defecto). Debe ser ≥ 300 MB para videos grandes.
+- Publicación (igual en graph.instagram.com y graph.facebook.com): contenedor `media_type=REELS` + `video_url` → se consulta `status_code` hasta `FINISHED` → `media_publish` → permalink. Si Meta sigue procesando tras ~40–60 s, el post queda en `publishing` y el cron `/api/internal/social-publisher` (cada 15 min, `maxDuration` 300) lo termina. `ERROR`/`EXPIRED` → `failed` (se puede reintentar; se crea un contenedor nuevo).
+- Codecs recomendados por Meta: H.264 o HEVC, audio AAC, 23–60 fps.
+
 ## Variables de entorno en Vercel
 
 | Variable | Uso |

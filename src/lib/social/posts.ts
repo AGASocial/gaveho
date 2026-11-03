@@ -3,7 +3,7 @@ import { publishClaimedPost } from './store'
 import type { CreatePostInput } from './validation'
 
 export const POST_LIST_COLUMNS =
-  'id,account_id,platform,caption,media_urls,status,scheduled_at,published_at,published_media_id,published_permalink,error,created_at,account:gaveho_social_accounts(label,username)'
+  'id,account_id,platform,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,status,scheduled_at,published_at,published_media_id,published_permalink,error,created_at,account:gaveho_social_accounts(label,username)'
 
 export class PostError extends Error {
   constructor(readonly status: number, message: string) {
@@ -12,7 +12,7 @@ export class PostError extends Error {
 }
 
 /** Shared post creation (admin UI + agent API): draft / scheduled insert, or claim as 'publishing' and publish now. */
-export async function createSocialPost(input: CreatePostInput, createdBy: string | null) {
+export async function createSocialPost(input: CreatePostInput, createdBy: string | null, opts: { reelWaitMs?: number } = {}) {
   const db = supabaseAdmin()
   const { data: account } = await db.from('gaveho_social_accounts').select('id,platform,is_active').eq('id', input.accountId).maybeSingle()
   if (!account?.is_active) throw new PostError(422, 'Account not found or disabled.')
@@ -24,17 +24,21 @@ export async function createSocialPost(input: CreatePostInput, createdBy: string
       platform: account.platform,
       caption: input.caption,
       media_urls: input.mediaUrls,
+      media_type: input.mediaType,
+      cover_url: input.coverUrl,
+      thumb_offset: input.thumbOffset,
+      share_to_feed: input.shareToFeed,
       status,
       scheduled_at: input.scheduledAt,
       created_by: createdBy,
       publish_attempts: status === 'publishing' ? 1 : 0,
       last_attempt_at: status === 'publishing' ? new Date().toISOString() : null,
     })
-    .select('id,account_id,caption,media_urls,status,scheduled_at')
+    .select('id,account_id,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,container_id,container_created_at,status,scheduled_at')
     .single()
   if (error || !post) throw new PostError(500, 'Could not save post.')
   if (status !== 'publishing') return { post, result: null }
-  return { post, result: await publishClaimedPost(post) }
+  return { post, result: await publishClaimedPost(post, opts) }
 }
 
 export async function listSocialPosts(filter: { status?: string; accountId?: string; limit?: number } = {}) {

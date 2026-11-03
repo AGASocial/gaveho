@@ -3,6 +3,7 @@ import { isIP } from 'node:net'
 import sharp from 'sharp'
 import { supabaseAdmin } from '@/lib/supabase'
 import { SOCIAL_BUCKET } from './store'
+import { bufferReader, inspectVideo, MAX_VIDEO_BYTES, VideoError, type VideoInfo } from './video'
 
 // Server-side storage + normalization for Instagram images (JPEG, ≤ 2160px, < 4 MB).
 export const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -51,18 +52,24 @@ function isBlockedHost(hostname: string) {
 }
 
 /** Downloads a public https image (no IP literals / local hosts), max 25 MB. */
-export async function downloadImage(rawUrl: string) {
+export function downloadImage(rawUrl: string) {
+  return downloadPublic(rawUrl, MAX_SOURCE_BYTES, 'Image', 15_000)
+}
+
+async function downloadPublic(rawUrl: string, maxBytes: number, label: string, timeoutMs: number) {
+  const tooBig = `${label} must be under ${Math.round(maxBytes / 1024 / 1024)} MB.`
   let url: URL
   try {
     url = new URL(rawUrl)
   } catch {
-    throw new Error('Invalid image URL.')
+    throw new Error(`Invalid ${label.toLowerCase()} URL.`)
   }
-  if (url.protocol !== 'https:' || isBlockedHost(url.hostname)) throw new Error('Image URLs must be public https URLs.')
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15_000), cache: 'no-store' }).catch(() => null)
-  if (!res?.ok || !res.body) throw new Error(`Could not download image (${res?.status ?? 'network error'}).`)
-  if (res.url && isBlockedHost(new URL(res.url).hostname)) throw new Error('Image URLs must be public https URLs.')
-  if (Number(res.headers.get('content-length') ?? 0) > MAX_SOURCE_BYTES) throw new Error('Image must be under 25 MB.')
+  const notPublic = `${label} URLs must be public https URLs.`
+  if (url.protocol !== 'https:' || isBlockedHost(url.hostname)) throw new Error(notPublic)
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' }).catch(() => null)
+  if (!res?.ok || !res.body) throw new Error(`Could not download ${label.toLowerCase()} (${res?.status ?? 'network error'}).`)
+  if (res.url && isBlockedHost(new URL(res.url).hostname)) throw new Error(notPublic)
+  if (Number(res.headers.get('content-length') ?? 0) > maxBytes) throw new Error(tooBig)
   const chunks: Uint8Array[] = []
   let size = 0
   const reader = res.body.getReader()
@@ -70,9 +77,9 @@ export async function downloadImage(rawUrl: string) {
     const { done, value } = await reader.read()
     if (done) break
     size += value.length
-    if (size > MAX_SOURCE_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel()
-      throw new Error('Image must be under 25 MB.')
+      throw new Error(tooBig)
     }
     chunks.push(value)
   }
@@ -94,4 +101,43 @@ export async function ingestImage(image: ImageInput) {
     if (!source.length) throw new Error('Empty image data.')
   } else throw new Error('Each image must be an https URL or {data, contentType}.')
   return storeJpeg(await normalizeToJpeg(source))
+}
+
+export type VideoInput = string | { url?: unknown; data?: unknown; contentType?: unknown }
+
+function datedPath(folder: string, ext: string) {
+  const now = new Date()
+  return `${folder}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}.${ext}`
+}
+
+/** New storage path for a reel video (admin direct upload). */
+export const newVideoPath = (container: 'mp4' | 'mov') => datedPath('reels', container)
+export const videoPathRe = /^reels\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.(mp4|mov)$/
+
+/** Accepts a public https URL or base64 ({data, contentType}); validates (no transcoding) and stores the video as-is. */
+export async function ingestVideo(video: VideoInput): Promise<{ mediaUrl: string; mediaPath: string; info: VideoInfo }> {
+  let source: Buffer
+  if (typeof video === 'string') source = await downloadPublic(video, MAX_VIDEO_BYTES, 'Video', 120_000)
+  else if (video && typeof video === 'object' && typeof video.url === 'string') source = await downloadPublic(video.url, MAX_VIDEO_BYTES, 'Video', 120_000)
+  else if (video && typeof video === 'object' && typeof video.data === 'string') {
+    if (typeof video.contentType === 'string' && !['video/mp4', 'video/quicktime'].includes(video.contentType)) {
+      throw new Error('contentType must be video/mp4 or video/quicktime.')
+    }
+    source = Buffer.from(video.data.replace(/^data:[^;]+;base64,/, ''), 'base64')
+    if (!source.length) throw new Error('Empty video data.')
+  } else throw new Error('video must be an https URL or {data, contentType}.')
+  let info: VideoInfo
+  try {
+    info = await inspectVideo(bufferReader(source))
+  } catch (e) {
+    throw new Error(e instanceof VideoError ? e.message : 'Could not read the video.')
+  }
+  const mediaPath = newVideoPath(info.container)
+  const db = supabaseAdmin()
+  const { error } = await db.storage.from(SOCIAL_BUCKET).upload(mediaPath, source, { contentType: info.contentType, cacheControl: '31536000', upsert: false })
+  if (error) {
+    console.error('[social/media] video upload failed:', error.message)
+    throw new Error('Video upload failed.')
+  }
+  return { mediaPath, mediaUrl: db.storage.from(SOCIAL_BUCKET).getPublicUrl(mediaPath).data.publicUrl, info }
 }
