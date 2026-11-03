@@ -58,28 +58,72 @@ async function resolveViaInstagram(token: string): Promise<ResolvedIgAccount[]> 
   return [{ host: 'instagram', igUserId, username: me.username ?? null }]
 }
 
-async function resolveViaFacebook(token: string): Promise<ResolvedIgAccount[]> {
+type IgRef = { id: string; username?: string }
+
+async function igProfile(api: Api, igUserId: string): Promise<ResolvedIgAccount> {
+  const ig = await metaRequest<{ id: string; username?: string }>(api, `${encodeURIComponent(igUserId)}?fields=id,username,profile_picture_url`)
+  return { host: 'facebook', igUserId: String(ig.id), username: ig.username ?? null }
+}
+
+async function resolveViaFacebook(token: string, igUserIdHint?: string): Promise<ResolvedIgAccount[]> {
   const api: Api = { token, host: 'facebook' }
-  const pages = await metaRequest<{ data?: { instagram_business_account?: { id: string; username?: string } }[] }>(
+  if (igUserIdHint) return [await igProfile(api, igUserIdHint)]
+
+  const found: IgRef[] = []
+  // 1. User tokens with Pages: IG accounts linked to each Page.
+  const pages = await metaRequest<{ data?: { instagram_business_account?: IgRef }[] }>(
     api,
     'me/accounts?fields=instagram_business_account{id,username,profile_picture_url}&limit=100'
-  )
-  const found = (pages.data ?? []).flatMap((p) => (p.instagram_business_account ? [p.instagram_business_account] : []))
+  ).catch(() => null)
+  for (const p of pages?.data ?? []) if (p.instagram_business_account) found.push(p.instagram_business_account)
+
+  // 2. Page access tokens: "me" is the Page itself.
   if (!found.length) {
-    // Page access tokens: "me" is the Page itself.
-    const page = await metaRequest<{ instagram_business_account?: { id: string; username?: string } }>(
-      api,
-      'me?fields=instagram_business_account{id,username,profile_picture_url}'
-    ).catch(() => null)
+    const page = await metaRequest<{ instagram_business_account?: IgRef }>(api, 'me?fields=instagram_business_account{id,username,profile_picture_url}').catch(() => null)
     if (page?.instagram_business_account) found.push(page.instagram_business_account)
   }
-  if (!found.length) throw new Error('No Instagram business account is linked to this Facebook token.')
-  return found.map((a) => ({ host: 'facebook' as const, igUserId: String(a.id), username: a.username ?? null }))
+
+  // 3. System user tokens (Unified login setup, no Page): IG ids are the granular scope targets.
+  if (!found.length) {
+    const url = `debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`
+    const debug = await metaRequest<{ data?: { granular_scopes?: { scope: string; target_ids?: string[] }[] } }>(api, url).catch(() => null)
+    const ids = new Set<string>()
+    for (const g of debug?.data?.granular_scopes ?? []) {
+      if (g.scope === 'instagram_basic' || g.scope === 'instagram_content_publish') g.target_ids?.forEach((id) => ids.add(String(id)))
+    }
+    for (const id of ids) found.push({ id })
+  }
+
+  // 4. Last resort: IG accounts owned by the system user's business portfolio(s).
+  if (!found.length) {
+    const businesses = await metaRequest<{ data?: { id: string }[] }>(api, 'me/businesses?fields=id&limit=25').catch(() => null)
+    for (const b of businesses?.data ?? []) {
+      const owned = await metaRequest<{ data?: IgRef[] }>(api, `${b.id}/owned_instagram_accounts?fields=id,username&limit=100`).catch(() => null)
+      found.push(...(owned?.data ?? []))
+    }
+  }
+
+  if (!found.length) {
+    throw new Error('No se encontró una cuenta de Instagram para este token de Facebook. Escribe el Instagram account ID manualmente.')
+  }
+  const unique = [...new Map(found.map((a) => [String(a.id), a])).values()]
+  const resolved: ResolvedIgAccount[] = []
+  for (const a of unique) {
+    // Also confirms the token can actually read the IG account.
+    resolved.push(a.username ? { host: 'facebook', igUserId: String(a.id), username: a.username } : await igProfile(api, String(a.id)))
+  }
+  return resolved
 }
 
 /** Validates a pasted token and returns the Instagram account(s) it can publish to. */
-export async function resolveTokenAccounts(token: string): Promise<ResolvedIgAccount[]> {
-  const order = token.startsWith('EA') ? [resolveViaFacebook, resolveViaInstagram] : [resolveViaInstagram, resolveViaFacebook]
+export async function resolveTokenAccounts(token: string, igUserIdHint?: string): Promise<ResolvedIgAccount[]> {
+  const viaFacebook = (t: string) => resolveViaFacebook(t, igUserIdHint)
+  const viaInstagram = async (t: string) => {
+    const accounts = await resolveViaInstagram(t)
+    if (igUserIdHint && accounts[0].igUserId !== igUserIdHint) throw new Error('El Instagram account ID no coincide con el token.')
+    return accounts
+  }
+  const order = token.startsWith('EA') ? [viaFacebook, viaInstagram] : [viaInstagram, viaFacebook]
   let firstError: unknown
   for (const attempt of order) {
     try {
@@ -88,6 +132,7 @@ export async function resolveTokenAccounts(token: string): Promise<ResolvedIgAcc
       firstError ??= err
     }
   }
+  // Report the error from the host the token most likely belongs to.
   throw firstError instanceof Error ? firstError : new Error('Token validation failed.')
 }
 
