@@ -41,10 +41,12 @@ export async function createSocialPost(input: CreatePostInput, createdBy: string
   return { post, result: await publishClaimedPost(post, opts) }
 }
 
-export async function listSocialPosts(filter: { status?: string; accountId?: string; limit?: number } = {}) {
+export async function listSocialPosts(filter: { status?: string; accountId?: string; accountIds?: string[]; limit?: number } = {}) {
+  if (filter.accountIds && filter.accountIds.length === 0) return []
   let q = supabaseAdmin().from('gaveho_social_posts').select(POST_LIST_COLUMNS).order('created_at', { ascending: false }).limit(filter.limit ?? 50)
   if (filter.status) q = q.eq('status', filter.status)
   if (filter.accountId) q = q.eq('account_id', filter.accountId)
+  if (filter.accountIds) q = q.in('account_id', filter.accountIds)
   const { data, error } = await q
   if (error) throw new PostError(500, 'Could not load posts.')
   return data

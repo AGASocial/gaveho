@@ -5,10 +5,27 @@ image normalization (JPEG, ≤ 2160 px, < 4 MB) and publisher as `/admin/social`
 
 ## Auth
 
-Every request needs `Authorization: Bearer $SOCIAL_AGENT_API_KEY`.
+Every request needs `Authorization: Bearer <key>`.
 
-- Without the header, or with a wrong key, you get `401`.
-- If the env var isn't set on the server, you get `503`.
+### Scoped API keys (recommended)
+
+Create keys in `/admin/social` → **Agent API keys**: give the key a label and pick the accounts it may use.
+The key (`gsk_` + 43 base64url chars) is shown **once** with a copy button; only its SHA-256 hash and an
+8-char display prefix are stored (`gaveho_social_agent_keys`). Revoke a key there at any time; the list shows
+each key's accounts, last use and status.
+
+A scoped key only sees its allowed accounts:
+
+- `GET /accounts` returns only the allowed accounts.
+- `GET /posts` returns only posts for allowed accounts; `?account=` for another account returns `403`.
+- `POST /posts` to an account the key is not allowed to use returns `403`.
+
+Without the header, with an unknown key, or with a revoked key, you get `401`.
+
+### Legacy `SOCIAL_AGENT_API_KEY` (deprecated)
+
+The single env-var key still works and grants **all accounts**. It is deprecated: move agents to scoped keys,
+then remove `SOCIAL_AGENT_API_KEY` from Vercel.
 
 On Gabriel's Mac the key is stored in `~/.config/gaveho/social-agent-key` (chmod 600). Never paste it in chats or commits.
 
@@ -60,6 +77,7 @@ Responses:
 - `201`: `{ id, account, status, scheduled_at, media_urls }`. When the post is published, the response also has `permalink` and `media_id`.
 - `502`: publishing failed. The response has `status: "failed"` and `error`.
 - `422`: validation error.
+- `403`: the API key is not allowed to use that account.
 - `404`: unknown account.
 
 Vercel limits request bodies to about 4.5 MB. For large or multiple images, send URLs instead of base64.
