@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Film, Loader2, Sparkles, Trash2, Upload } from 'lucide-react'
 import { prepareInstagramJpeg } from '@/lib/social/image-upload'
 import { supabase } from '@/lib/supabase'
+import { PostPreviewDialog } from './post-preview-dialog'
 
 type Account = {
   id: string
@@ -67,6 +68,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
   const [thumbSeconds, setThumbSeconds] = useState('')
   const [shareToFeed, setShareToFeed] = useState(true)
   const [caption, setCaption] = useState('')
+  const [preview, setPreview] = useState<Post | null>(null)
   const [hint, setHint] = useState('')
   const [language, setLanguage] = useState<'en' | 'es'>('en')
   const [scheduledAt, setScheduledAt] = useState('')
@@ -514,12 +516,19 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
           <ul className="space-y-3">
             {posts.map((p) => (
               <li key={p.id} className="flex gap-3 border-b border-border pb-3">
-                {p.media_type === 'reel' && !p.cover_url ? (
-                  <video src={p.media_urls[0]} muted preload="metadata" className="h-16 w-16 object-cover rounded" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.media_type === 'reel' ? p.cover_url! : p.media_urls[0]} alt="" className="h-16 w-16 object-cover rounded" />
-                )}
+                <button
+                  type="button"
+                  onClick={() => setPreview(p)}
+                  aria-label="Preview post"
+                  className="shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  {p.media_type === 'reel' && !p.cover_url ? (
+                    <video src={p.media_urls[0]} muted preload="metadata" className="h-16 w-16 object-cover rounded" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.media_type === 'reel' ? p.cover_url! : p.media_urls[0]} alt="" className="h-16 w-16 object-cover rounded" />
+                  )}
+                </button>
                 <div className="flex-1 min-w-0 text-sm space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge className={statusColor[p.status]}>{p.status}</Badge>
@@ -535,7 +544,13 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
                       </a>
                     ) : null}
                   </div>
-                  <p className="truncate">{p.caption || <em className="text-muted-foreground">no caption</em>}</p>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(p)}
+                    className="block w-full truncate text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    {p.caption || <em className="text-muted-foreground">no caption</em>}
+                  </button>
                   {p.error ? <p className="text-red-500 text-xs">{p.error}</p> : null}
                 </div>
                 {['draft', 'scheduled', 'failed'].includes(p.status) ? (
@@ -551,6 +566,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
               </li>
             ))}
           </ul>
+          <PostPreviewDialog key={preview?.id ?? 'none'} post={preview} statusClass={preview ? statusColor[preview.status] : ''} onClose={() => setPreview(null)} />
         </CardContent>
       </Card>
     </div>
