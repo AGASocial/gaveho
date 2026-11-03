@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
 import { findAccount } from '@/lib/social/accounts'
 import { requireAgentApi, scopeAllows } from '@/lib/social/agent-auth'
-import { type ImageInput, ingestImage, ingestVideo, type VideoInput } from '@/lib/social/media'
+import { checkAgentMediaPath, mediaPathOf, type MediaPathCheck } from '@/lib/social/agent-uploads'
+import { type ImageInput, ingestImage, ingestUploadedImage, ingestUploadedVideo, ingestVideo, type VideoInput } from '@/lib/social/media'
 import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
 import { MAX_MEDIA, parseCreatePost } from '@/lib/social/validation'
@@ -39,8 +40,10 @@ export async function GET(request: Request) {
 
 // POST { account, caption, mode?: draft|schedule|publish_now, scheduled_at?,
 //        type?: 'image' (default) | 'reel',
-//        images: [url | {data, contentType}]                          (type 'image')
-//        video | video_url: url | {data, contentType}, cover?, thumb_offset?, share_to_feed?  (type 'reel') }
+//        images: [url | {data, contentType} | {media_path}] | image_url | media_path   (type 'image')
+//        video | video_url: url | {data, contentType} | {media_path}, or media_path,
+//        cover? | cover_url? | cover_media_path?, thumb_offset?, share_to_feed?  (type 'reel') }
+// media_path comes from POST /api/agent/social/uploads and must be under agent/<this account id>/.
 export async function POST(request: Request) {
   const scope = await requireAgentApi(request)
   if (scope instanceof NextResponse) return scope
@@ -54,13 +57,28 @@ export async function POST(request: Request) {
   const type = body.type ?? body.media_type ?? 'image'
   if (type !== 'image' && type !== 'reel') return err(422, "type must be 'image' or 'reel'.")
   const reel = type === 'reel'
-  const images = Array.isArray(body.images) ? (body.images as ImageInput[]) : []
-  const video = (body.video ?? body.video_url) as VideoInput | undefined
-  const cover = (body.cover ?? body.cover_url ?? null) as ImageInput | null
+  const topPath = body.media_path ?? body.mediaPath
+  let images: ImageInput[] = Array.isArray(body.images) ? (body.images as ImageInput[]) : []
+  if (!reel && !images.length && typeof body.image_url === 'string') images = [body.image_url]
+  if (!reel && !images.length && topPath !== undefined) images = [{ media_path: topPath } as ImageInput]
+  const video = (body.video ?? body.video_url ?? (reel && topPath !== undefined ? { media_path: topPath } : undefined)) as VideoInput | undefined
+  const coverPath = body.cover_media_path
+  const cover = (body.cover ?? body.cover_url ?? (coverPath !== undefined ? { media_path: coverPath } : null)) as ImageInput | null
   if (reel) {
-    if (!video) return err(422, 'video (https URL or {data, contentType}) is required for reels.')
+    if (!video) return err(422, 'video (https URL, {data, contentType} or media_path) is required for reels.')
     if (images.length) return err(422, 'Reels take one video, not images (use cover for a cover image).')
   } else if (images.length < 1 || images.length > MAX_MEDIA) return err(422, `images must have 1–${MAX_MEDIA} items.`)
+  // media_path inputs: check format and account prefix before touching storage.
+  const pathCheck = (input: unknown, kind: 'image' | 'video'): MediaPathCheck | null => {
+    const p = typeof input === 'object' ? mediaPathOf(input) : undefined
+    return p === undefined ? null : checkAgentMediaPath(p, account.id, kind)
+  }
+  const videoCheck = reel ? pathCheck(video, 'video') : null
+  const coverCheck = cover ? pathCheck(cover, 'image') : null
+  const imageChecks = images.map((image) => pathCheck(image, 'image'))
+  for (const [label, c] of [['video', videoCheck], ['cover', coverCheck], ...imageChecks.map((c, i) => [`images[${i}]`, c] as const)] as const) {
+    if (c && !c.ok) return err(c.status, `${label}: ${c.error}`)
+  }
   const modeRaw = body.mode ?? 'draft'
   const mode = modeRaw === 'publish_now' ? 'now' : modeRaw
   const candidate = {
@@ -83,7 +101,7 @@ export async function POST(request: Request) {
   let warnings: string[] = []
   if (reel) {
     try {
-      const stored = await ingestVideo(video!)
+      const stored = videoCheck?.ok ? await ingestUploadedVideo(videoCheck) : await ingestVideo(video!)
       mediaUrls.push(stored.mediaUrl)
       warnings = stored.info.warnings
     } catch (e) {
@@ -91,15 +109,16 @@ export async function POST(request: Request) {
     }
     if (cover) {
       try {
-        coverUrl = (await ingestImage(cover)).mediaUrl
+        coverUrl = (coverCheck?.ok ? await ingestUploadedImage(coverCheck) : await ingestImage(cover)).mediaUrl
       } catch (e) {
         return err(422, `cover: ${e instanceof Error ? e.message : 'invalid image'}`)
       }
     }
   } else {
     for (const [i, image] of images.entries()) {
+      const check = imageChecks[i]
       try {
-        mediaUrls.push((await ingestImage(image)).mediaUrl)
+        mediaUrls.push((check?.ok ? await ingestUploadedImage(check) : await ingestImage(image)).mediaUrl)
       } catch (e) {
         return err(422, `images[${i}]: ${e instanceof Error ? e.message : 'invalid image'}`)
       }
