@@ -2,7 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { ACCOUNT_PUBLIC_COLUMNS } from './store'
 
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-type PublicAccount = { id: string; is_active: boolean; username: string | null; label: string }
+type PublicAccount = { id: string; platform: string; is_active: boolean; username: string | null; label: string }
 
 /** Finds an account by id, username (with or without @) or label. */
 export async function findAccount(ref: string): Promise<PublicAccount | null> {

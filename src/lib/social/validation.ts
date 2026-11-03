@@ -1,3 +1,5 @@
+import { parseTikTokOptions, type TikTokOptions } from './tiktok'
+
 export const MAX_CAPTION = 2200
 export const MAX_MEDIA = 10
 export type PostMode = 'draft' | 'schedule' | 'now'
@@ -15,6 +17,10 @@ export type CreatePostInput = {
   coverUrl: string | null
   thumbOffset: number | null
   shareToFeed: boolean
+  /** TikTok settings (used only when the post's account is a TikTok account). */
+  tiktok: TikTokOptions | null
+  /** Extra accounts (e.g. a TikTok account next to an Instagram one) that get their own copy of the post. */
+  alsoAccountIds: string[]
 }
 
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -60,6 +66,12 @@ export function parseCreatePost(
       shareToFeed = b.shareToFeed
     }
   }
+  const tiktokParsed = parseTikTokOptions(b.tiktok)
+  if (!tiktokParsed.ok) return { ok: false, error: tiktokParsed.error }
+  const alsoRaw = b.alsoAccountIds ?? []
+  if (!Array.isArray(alsoRaw) || alsoRaw.some((id) => typeof id !== 'string' || !uuidRe.test(id))) return { ok: false, error: 'alsoAccountIds must be account ids.' }
+  const alsoAccountIds = [...new Set(alsoRaw as string[])].filter((id) => id !== accountId)
+  if (alsoAccountIds.length > 5) return { ok: false, error: 'At most 5 extra accounts per post.' }
   const mode = b.mode
   if (mode !== 'draft' && mode !== 'schedule' && mode !== 'now') return { ok: false, error: 'Invalid mode.' }
   let scheduledAt: string | null = null
@@ -70,5 +82,5 @@ export function parseCreatePost(
     scheduledAt = d.toISOString()
   }
   if (mode !== 'draft' && !caption) return { ok: false, error: 'Caption is required to publish.' }
-  return { ok: true, value: { accountId, caption, mediaUrls, mode, scheduledAt, mediaType, coverUrl, thumbOffset, shareToFeed } }
+  return { ok: true, value: { accountId, caption, mediaUrls, mode, scheduledAt, mediaType, coverUrl, thumbOffset, shareToFeed, tiktok: tiktokParsed.value, alsoAccountIds } }
 }

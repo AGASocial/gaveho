@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { noStoreHeaders, requireAdminApi } from '@/lib/admin/auth'
 import { supabaseAdmin } from '@/lib/supabase'
-import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
+import { createSocialPosts, listSocialPosts, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
 import { parseCreatePost } from '@/lib/social/validation'
 
@@ -23,9 +23,12 @@ export async function POST(request: Request) {
   const parsed = parseCreatePost(await request.json().catch(() => null), socialMediaPrefix())
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 422, headers: noStoreHeaders })
   try {
-    const { post, result } = await createSocialPost(parsed.value, admin.id)
-    if (!result) return NextResponse.json({ post }, { headers: noStoreHeaders })
-    return NextResponse.json({ post: { ...post, ...result } }, { status: result.status === 'published' ? 200 : result.status === 'publishing' ? 202 : 502, headers: noStoreHeaders })
+    const created = await createSocialPosts(parsed.value, admin.id)
+    // `post` stays the primary account's post (backward compatible); `posts` lists every target.
+    const posts = created.map(({ post, result }) => (result ? { ...post, ...result } : post))
+    const { result } = created[0]
+    if (!result) return NextResponse.json({ post: posts[0], posts }, { headers: noStoreHeaders })
+    return NextResponse.json({ post: posts[0], posts }, { status: result.status === 'published' ? 200 : result.status === 'publishing' ? 202 : 502, headers: noStoreHeaders })
   } catch (e) {
     const status = e instanceof PostError ? e.status : 500
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Could not save post.' }, { status, headers: noStoreHeaders })

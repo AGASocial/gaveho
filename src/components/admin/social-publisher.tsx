@@ -54,7 +54,14 @@ async function json<T>(res: Response): Promise<T> {
   return data as T
 }
 
-export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured: boolean }) {
+const TIKTOK_PRIVACY = [
+  ['SELF_ONLY', 'Only me (required until the TikTok app is audited)'],
+  ['MUTUAL_FOLLOW_FRIENDS', 'Friends'],
+  ['FOLLOWER_OF_CREATOR', 'Followers'],
+  ['PUBLIC_TO_EVERYONE', 'Everyone'],
+] as const
+
+export function SocialPublisher({ encryptionConfigured, tiktokConfigured = false }: { encryptionConfigured: boolean; tiktokConfigured?: boolean }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [newLabel, setNewLabel] = useState('')
@@ -74,6 +81,10 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
   const [scheduledAt, setScheduledAt] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [alsoIds, setAlsoIds] = useState<string[]>([])
+  const [ttPrivacy, setTtPrivacy] = useState<string>('SELF_ONLY')
+  const [ttOptions, setTtOptions] = useState<string[]>([])
+  const [ttFlags, setTtFlags] = useState({ disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: false })
 
   const load = useCallback(async () => {
     try {
@@ -90,7 +101,14 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('tiktok') === 'connected'
+    const ttError = params.get('tiktok_error')
+    if (connected || ttError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMessage(connected ? 'TikTok account connected.' : `TikTok connection failed: ${ttError}`)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
     load()
   }, [load])
 
@@ -138,7 +156,29 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
       setCover(await json<Media>(await fetch('/api/admin/social/upload', { method: 'POST', body })))
     })
 
-  const isReel = postType === 'reel'
+  const platformOf = (id: string) => accounts.find((a) => a.id === id)?.platform
+  const primaryTikTok = platformOf(accountId) === 'tiktok'
+  const isReel = postType === 'reel' || primaryTikTok
+  const targets = [accountId, ...alsoIds.filter((id) => id !== accountId)]
+  const hasTikTok = targets.some((id) => platformOf(id) === 'tiktok')
+  const tiktokTarget = targets.find((id) => platformOf(id) === 'tiktok')
+
+  // Load the TikTok creator's allowed privacy levels when a TikTok account is targeted.
+  useEffect(() => {
+    if (!tiktokTarget) return
+    let cancelled = false
+    fetch(`/api/admin/social/tiktok/creator-info?accountId=${tiktokTarget}`)
+      .then((r) => json<{ creator: { privacy_level_options: string[] } }>(r))
+      .then((r) => {
+        if (cancelled) return
+        setTtOptions(r.creator.privacy_level_options)
+        setTtPrivacy((cur) => (r.creator.privacy_level_options.includes(cur) ? cur : r.creator.privacy_level_options.includes('SELF_ONLY') ? 'SELF_ONLY' : r.creator.privacy_level_options[0] ?? cur))
+      })
+      .catch(() => !cancelled && setTtOptions([]))
+    return () => {
+      cancelled = true
+    }
+  }, [tiktokTarget])
   const hasMedia = isReel ? !!video : media.length > 0
   const captionSource = isReel ? cover : media[0]
 
@@ -157,7 +197,8 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
 
   const submit = (mode: 'draft' | 'schedule' | 'now') =>
     run(mode, async () => {
-      if (mode === 'now' && !confirm('Publish to Instagram now?')) return
+      const names = targets.map((id) => accounts.find((a) => a.id === id)).map((a) => (a ? `${a.platform} @${a.username ?? a.label}` : '?'))
+      if (mode === 'now' && !confirm(`Publish now to ${names.join(' and ')}?`)) return
       const res = await json<{ result?: { status: string; message?: string } }>(
         await fetch('/api/admin/social/posts', {
           method: 'POST',
@@ -165,7 +206,9 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
           body: JSON.stringify({
             accountId,
             caption,
-            mediaType: postType,
+            mediaType: isReel ? 'reel' : 'image',
+            ...(isReel && alsoIds.length ? { alsoAccountIds: alsoIds.filter((id) => id !== accountId) } : {}),
+            ...(hasTikTok ? { tiktok: { privacy_level: ttPrivacy, ...ttFlags } } : {}),
             mediaUrls: isReel ? (video ? [video.mediaUrl] : []) : media.map((m) => m.mediaUrl),
             ...(isReel
               ? { coverUrl: cover?.mediaUrl ?? null, thumbOffset: thumbSeconds ? Math.round(Number(thumbSeconds) * 1000) : null, shareToFeed }
@@ -180,6 +223,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
       setCover(null)
       setThumbSeconds('')
       setShareToFeed(true)
+      setAlsoIds([])
       setCaption('')
       setHint('')
       setScheduledAt('')
@@ -191,7 +235,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
     run(`pub-${id}`, async () => {
       if (!confirm('Publish this post now?')) return
       const r = await json<{ status?: string; message?: string }>(await fetch(`/api/admin/social/posts/${id}/publish`, { method: 'POST' }))
-      if (r.status === 'publishing') setMessage(r.message ?? 'Instagram is still processing the video.')
+      if (r.status === 'publishing') setMessage(r.message ?? 'The platform is still processing the video.')
       await load()
     })
 
@@ -283,12 +327,12 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
                 <span className="font-semibold">{a.label}</span>
                 <span className="text-muted-foreground">@{a.username}</span>
                 <span className="text-muted-foreground">
-                  {a.api_host === 'facebook' ? 'graph.facebook.com' : 'graph.instagram.com'} · token expires{' '}
-                  {a.token_expires_at ? new Date(a.token_expires_at).toLocaleDateString() : 'never / unknown'}
+                  {a.platform === 'tiktok' ? 'open.tiktokapis.com · access token auto-refreshes' : a.api_host === 'facebook' ? 'graph.facebook.com' : 'graph.instagram.com'}
+                  {a.platform === 'tiktok' ? null : <> · token expires {a.token_expires_at ? new Date(a.token_expires_at).toLocaleDateString() : 'never / unknown'}</>}
                 </span>
                 {!a.is_active ? <Badge className="bg-zinc-600">disabled</Badge> : null}
                 <span className="ml-auto flex gap-2">
-                  {a.api_host === 'instagram' && a.token_expires_at ? (
+                  {(a.api_host === 'instagram' && a.token_expires_at) || a.platform === 'tiktok' ? (
                     <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => refreshToken(a.id)}>
                       refresh token
                     </Button>
@@ -306,6 +350,14 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
               </li>
             ))}
           </ul>
+          {encryptionConfigured && tiktokConfigured ? (
+            <div className="border-t border-border pt-4">
+              <a href="/api/admin/social/tiktok/connect" className="inline-flex items-center rounded border border-border px-3 py-1.5 text-sm hover:bg-muted">
+                Connect TikTok
+              </a>
+              <p className="text-xs text-muted-foreground mt-1">Opens TikTok to authorize posting; reconnecting the same TikTok user updates its tokens.</p>
+            </div>
+          ) : null}
           {encryptionConfigured ? (
             <form onSubmit={addAccount} className="space-y-2 border-t border-border pt-4">
               <p className="text-sm font-semibold">Agregar cuenta</p>
@@ -376,8 +428,15 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
 
           <div className="flex gap-2" role="radiogroup" aria-label="post type">
             {(['image', 'reel'] as const).map((t) => (
-              <Button key={t} type="button" size="sm" variant={postType === t ? 'default' : 'outline'} onClick={() => setPostType(t)}>
-                {t === 'image' ? 'Image / carousel' : 'Reel'}
+              <Button
+                key={t}
+                type="button"
+                size="sm"
+                variant={(t === 'reel') === isReel ? 'default' : 'outline'}
+                disabled={t === 'image' && primaryTikTok}
+                onClick={() => setPostType(t)}
+              >
+                {t === 'image' ? 'Image / carousel' : primaryTikTok ? 'Video' : 'Reel'}
               </Button>
             ))}
           </div>
@@ -435,6 +494,55 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
                   <input type="checkbox" checked={shareToFeed} onChange={(e) => setShareToFeed(e.target.checked)} /> Also share to feed
                 </label>
               </div>
+              {activeAccounts.filter((a) => a.id !== accountId).length ? (
+                <div className="space-y-1">
+                  <Label>Also post this video to</Label>
+                  <div className="flex flex-wrap gap-4">
+                    {activeAccounts
+                      .filter((a) => a.id !== accountId)
+                      .map((a) => (
+                        <label key={a.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={alsoIds.includes(a.id)}
+                            onChange={(e) => setAlsoIds((cur) => (e.target.checked ? [...cur, a.id] : cur.filter((x) => x !== a.id)))}
+                          />
+                          {a.platform} · {a.label} (@{a.username})
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+              {hasTikTok ? (
+                <div className="space-y-2 border border-border rounded p-3">
+                  <p className="text-sm font-semibold">TikTok</p>
+                  <div className="space-y-1">
+                    <Label htmlFor="tt-privacy">Who can view</Label>
+                    <select id="tt-privacy" className="bg-background border border-border rounded px-3 py-2 text-sm" value={ttPrivacy} onChange={(e) => setTtPrivacy(e.target.value)}>
+                      {TIKTOK_PRIVACY.filter(([v]) => !ttOptions.length || ttOptions.includes(v)).map(([v, label]) => (
+                        <option key={v} value={v}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    {(
+                      [
+                        ['disable_comment', 'Disable comments'],
+                        ['disable_duet', 'Disable duet'],
+                        ['disable_stitch', 'Disable stitch'],
+                        ['is_aigc', 'AI-generated content'],
+                      ] as const
+                    ).map(([k, label]) => (
+                      <label key={k} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={ttFlags[k]} onChange={(e) => setTtFlags((cur) => ({ ...cur, [k]: e.target.checked }))} /> {label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Cover images are Instagram-only; TikTok uses the thumbnail time.</p>
+                </div>
+              ) : null}
             </div>
           ) : (
           <div className="space-y-2">

@@ -7,7 +7,10 @@ export default function AdminSocialPage() {
   return (
     <main className="container mx-auto max-w-6xl px-4 py-8">
       <h1 className="text-2xl font-bold mb-6">Social publisher</h1>
-      <SocialPublisher encryptionConfigured={Boolean(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY)} />
+      <SocialPublisher
+        encryptionConfigured={Boolean(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY)}
+        tiktokConfigured={Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET)}
+      />
       <AgentKeys />
     </main>
   )

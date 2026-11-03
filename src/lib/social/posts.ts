@@ -3,7 +3,7 @@ import { publishClaimedPost } from './store'
 import type { CreatePostInput } from './validation'
 
 export const POST_LIST_COLUMNS =
-  'id,account_id,platform,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,status,scheduled_at,published_at,published_media_id,published_permalink,error,created_at,account:gaveho_social_accounts(label,username)'
+  'id,account_id,platform,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,tiktok_options,status,scheduled_at,published_at,published_media_id,published_permalink,error,created_at,account:gaveho_social_accounts(label,username)'
 
 export class PostError extends Error {
   constructor(readonly status: number, message: string) {
@@ -16,6 +16,7 @@ export async function createSocialPost(input: CreatePostInput, createdBy: string
   const db = supabaseAdmin()
   const { data: account } = await db.from('gaveho_social_accounts').select('id,platform,is_active').eq('id', input.accountId).maybeSingle()
   if (!account?.is_active) throw new PostError(422, 'Account not found or disabled.')
+  if (account.platform === 'tiktok' && input.mediaType !== 'reel') throw new PostError(422, 'TikTok accounts only take videos (type reel).')
   const status = input.mode === 'draft' ? 'draft' : input.mode === 'schedule' ? 'scheduled' : 'publishing'
   const { data: post, error } = await db
     .from('gaveho_social_posts')
@@ -28,17 +29,37 @@ export async function createSocialPost(input: CreatePostInput, createdBy: string
       cover_url: input.coverUrl,
       thumb_offset: input.thumbOffset,
       share_to_feed: input.shareToFeed,
+      tiktok_options: account.platform === 'tiktok' ? (input.tiktok ?? {}) : null,
       status,
       scheduled_at: input.scheduledAt,
       created_by: createdBy,
       publish_attempts: status === 'publishing' ? 1 : 0,
       last_attempt_at: status === 'publishing' ? new Date().toISOString() : null,
     })
-    .select('id,account_id,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,container_id,container_created_at,status,scheduled_at')
+    .select('id,account_id,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,container_id,container_created_at,status,scheduled_at,platform,tiktok_options')
     .single()
   if (error || !post) throw new PostError(500, 'Could not save post.')
   if (status !== 'publishing') return { post, result: null }
   return { post, result: await publishClaimedPost(post, opts) }
+}
+
+/**
+ * Creates the post for input.accountId and one copy per input.alsoAccountIds (e.g. the same video on
+ * Instagram and TikTok). Every account is validated before anything is inserted.
+ */
+export async function createSocialPosts(input: CreatePostInput, createdBy: string | null, opts: { reelWaitMs?: number } = {}) {
+  const ids = [input.accountId, ...input.alsoAccountIds.filter((id) => id !== input.accountId)]
+  if (ids.length > 1) {
+    const { data } = await supabaseAdmin().from('gaveho_social_accounts').select('id,platform,is_active').in('id', ids)
+    for (const id of ids) {
+      const a = data?.find((x) => x.id === id)
+      if (!a?.is_active) throw new PostError(422, 'Account not found or disabled.')
+      if (a.platform === 'tiktok' && input.mediaType !== 'reel') throw new PostError(422, 'TikTok accounts only take videos (type reel).')
+    }
+  }
+  const results = []
+  for (const id of ids) results.push(await createSocialPost({ ...input, accountId: id, alsoAccountIds: [] }, createdBy, opts))
+  return results
 }
 
 export async function listSocialPosts(filter: { status?: string; accountId?: string; accountIds?: string[]; limit?: number } = {}) {

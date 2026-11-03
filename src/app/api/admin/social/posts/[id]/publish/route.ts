@@ -19,7 +19,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     .update({ status: 'publishing', error: null, publish_attempts: (current.publish_attempts ?? 0) + 1, last_attempt_at: new Date().toISOString(), container_id: null, container_created_at: null })
     .eq('id', id)
     .in('status', ['draft', 'scheduled', 'failed'])
-    .select('id,account_id,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,container_id,container_created_at')
+    .select('id,account_id,caption,media_urls,media_type,cover_url,thumb_offset,share_to_feed,container_id,container_created_at,platform,tiktok_options')
     .maybeSingle()
   if (error) return NextResponse.json({ error: 'Could not claim post.' }, { status: 500, headers: noStoreHeaders })
   if (!post) return NextResponse.json({ error: 'Post is already publishing or published.' }, { status: 409, headers: noStoreHeaders })

@@ -1,16 +1,19 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { decryptToken, encryptToken } from './crypto'
+import { publishTikTokPost, refreshTikTokAccount } from './tiktok-store'
+import type { TikTokOptions } from './tiktok'
 import { type ApiHost, createReelContainer, publishInstagramMedia, publishReelContainer, refreshLongLivedToken, waitForReelContainer } from './instagram'
 
 export const SOCIAL_BUCKET = 'gaveho-social'
-export const ACCOUNT_PUBLIC_COLUMNS = 'id,platform,api_host,label,ig_user_id,username,caption_voice,token_expires_at,token_refreshed_at,is_active,created_at,updated_at'
+export const ACCOUNT_PUBLIC_COLUMNS =
+  'id,platform,api_host,label,ig_user_id,username,caption_voice,token_expires_at,token_refreshed_at,is_active,created_at,updated_at'
 
 export function socialMediaPrefix() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')
   return url ? `${url}/storage/v1/object/public/${SOCIAL_BUCKET}/` : ''
 }
 
-type AccountRow = { id: string; platform: string; api_host: ApiHost; ig_user_id: string | null; access_token_encrypted: string; is_active: boolean }
+type AccountRow = { id: string; platform: string; api_host: ApiHost | 'tiktok'; ig_user_id: string | null; access_token_encrypted: string; is_active: boolean }
 
 async function loadAccountWithToken(accountId: string) {
   const { data, error } = await supabaseAdmin()
@@ -35,6 +38,8 @@ export type ClaimedPost = {
   share_to_feed?: boolean | null
   container_id?: string | null
   container_created_at?: string | null
+  platform?: string | null
+  tiktok_options?: TikTokOptions | null
 }
 
 export type PublishResult =
@@ -54,8 +59,10 @@ export const REEL_INLINE_WAIT_MS = 40_000
 export async function publishClaimedPost(post: ClaimedPost, opts: { reelWaitMs?: number } = {}): Promise<PublishResult> {
   const db = supabaseAdmin()
   try {
+    const platform = post.platform ?? (await accountPlatform(post.account_id))
+    if (platform === 'tiktok') return await publishTikTokClaimed(post, opts.reelWaitMs ?? REEL_INLINE_WAIT_MS)
     const account = await loadAccountWithToken(post.account_id)
-    const api = { token: account.token, host: account.api_host ?? 'instagram' }
+    const api = { token: account.token, host: (account.api_host as ApiHost) ?? 'instagram' }
     let result: { mediaId: string; permalink: string | null }
     if (post.media_type === 'reel') {
       let containerId = post.container_id ?? null
@@ -108,7 +115,33 @@ export async function publishClaimedPost(post: ClaimedPost, opts: { reelWaitMs?:
   }
 }
 
+async function accountPlatform(accountId: string) {
+  const { data } = await supabaseAdmin().from('gaveho_social_accounts').select('platform').eq('id', accountId).maybeSingle<{ platform: string }>()
+  return data?.platform ?? 'instagram'
+}
+
+async function publishTikTokClaimed(post: ClaimedPost, waitMs: number): Promise<PublishResult> {
+  const db = supabaseAdmin()
+  if (post.media_type !== 'reel') throw new Error('TikTok posts must be videos.')
+  const outcome = await publishTikTokPost(post, waitMs)
+  if (outcome.state === 'in_progress') {
+    await db.from('gaveho_social_posts').update({ last_attempt_at: new Date().toISOString() }).eq('id', post.id).eq('status', 'publishing')
+    return { id: post.id, status: 'publishing', containerId: outcome.publishId, message: 'TikTok is still processing the video; the publisher cron will finish it (runs every 15 minutes).' }
+  }
+  const { error } = await db
+    .from('gaveho_social_posts')
+    .update({ status: 'published', published_media_id: outcome.mediaId, published_permalink: outcome.permalink, published_at: new Date().toISOString(), error: null })
+    .eq('id', post.id)
+    .eq('status', 'publishing')
+  if (error) throw error
+  return { id: post.id, status: 'published', permalink: outcome.permalink, mediaId: outcome.mediaId }
+}
+
 export async function refreshAccountToken(accountId: string) {
+  if ((await accountPlatform(accountId)) === 'tiktok') {
+    const { expiresAt } = await refreshTikTokAccount(accountId, true)
+    return { expiresAt }
+  }
   const db = supabaseAdmin()
   const account = await loadAccountWithToken(accountId)
   if (account.api_host === 'facebook') throw new Error('Facebook-login tokens are not refreshable here; paste a new token instead.')
