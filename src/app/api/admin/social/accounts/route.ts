@@ -23,3 +23,18 @@ export async function PATCH(request: Request) {
   if (error || !data) return NextResponse.json({ error: 'Could not update account.' }, { status: 500, headers: noStoreHeaders })
   return NextResponse.json({ account: data }, { headers: noStoreHeaders })
 }
+
+// Removes an account and its posts (posts reference accounts with ON DELETE RESTRICT).
+export async function DELETE(request: Request) {
+  const guard = await requireAdminApi()
+  if (guard instanceof NextResponse) return guard
+  const id = new URL(request.url).searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 422, headers: noStoreHeaders })
+  const db = supabaseAdmin()
+  const { count } = await db.from('gaveho_social_posts').select('id', { count: 'exact', head: true }).eq('account_id', id).eq('status', 'publishing')
+  if (count) return NextResponse.json({ error: 'A post is publishing right now; try again in a minute.' }, { status: 409, headers: noStoreHeaders })
+  const posts = await db.from('gaveho_social_posts').delete().eq('account_id', id)
+  const { error } = posts.error ? posts : await db.from('gaveho_social_accounts').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: 'Could not remove account.' }, { status: 500, headers: noStoreHeaders })
+  return NextResponse.json({ ok: true }, { headers: noStoreHeaders })
+}

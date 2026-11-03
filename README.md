@@ -263,15 +263,19 @@ on conflict (user_id) do update set is_active = true;
 
 ## Social publisher (`/admin/social`)
 
-Multi-account Instagram publishing (Instagram API with Instagram Login). Tokens are stored
+Multi-account Instagram publishing. Accounts are added by pasting an access token (Meta →
+Instagram API → "Generar tokens de acceso"); both Instagram-login (`graph.instagram.com`, `IG…`)
+and Facebook-login (`graph.facebook.com`, `EA…`) tokens work, and the host is stored per account
+(`api_host`). Tokens are stored
 AES-256-GCM encrypted (`SOCIAL_TOKEN_ENCRYPTION_KEY`) in `gaveho_social_accounts`; posts live in
 `gaveho_social_posts` (draft / scheduled / publishing / published / failed). Images go to the public
 `gaveho-social` storage bucket. AI captions use Vercel AI Gateway (`anthropic/claude-sonnet-4.5`).
 Cron (`vercel.json`): `/api/internal/social-publisher` every 15 min and
 `/api/internal/social-token-refresh` daily, both protected by `CRON_SECRET`.
 
-Env vars: `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `INSTAGRAM_REDIRECT_URI` (optional),
-`INSTAGRAM_GRAPH_API_VERSION` (optional), `SOCIAL_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`.
-Meta redirect URI: `https://gaveho.com/api/admin/social/instagram/callback`.
+The token-refresh cron only refreshes Instagram-login tokens with a known expiry; non-expiring
+tokens are skipped.
+
+Env vars: `SOCIAL_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `META_GRAPH_API_VERSION` (optional, default `v23.0`).
 
 Tests: `npm test` (node:test via tsx).

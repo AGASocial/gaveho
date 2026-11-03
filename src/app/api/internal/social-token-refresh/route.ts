@@ -6,7 +6,9 @@ import { refreshAccountToken } from '@/lib/social/store'
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
-// Daily: refresh Instagram long-lived tokens that expire within 15 days.
+// Daily: refresh Instagram-login long-lived tokens that expire within 15 days.
+// Tokens without an expiry (non-expiring / system user tokens) and Facebook-login
+// tokens are skipped.
 export async function GET(request: Request) {
   if (!isAuthorizedCron(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const cutoff = new Date(Date.now() + 15 * 24 * 3600 * 1000).toISOString()
@@ -15,6 +17,8 @@ export async function GET(request: Request) {
     .select('id')
     .eq('platform', 'instagram')
     .eq('is_active', true)
+    .eq('api_host', 'instagram')
+    .not('token_expires_at', 'is', null)
     .lt('token_expires_at', cutoff)
   if (error) return NextResponse.json({ error: 'Could not load accounts.' }, { status: 500 })
   const results = []
