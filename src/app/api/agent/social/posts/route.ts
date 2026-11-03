@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
 import { findAccount } from '@/lib/social/accounts'
 import { requireAgentApi, scopeAllows } from '@/lib/social/agent-auth'
-import { checkAgentMediaPath, mediaPathOf, type MediaPathCheck } from '@/lib/social/agent-uploads'
-import { type ImageInput, ingestImage, ingestUploadedImage, ingestUploadedVideo, ingestVideo, type VideoInput } from '@/lib/social/media'
+import { checkAgentMediaPath, conflictingMediaSources, isOwnAgentUploadUrl, mediaPathOf, mediaUrlOf, type MediaPathCheck } from '@/lib/social/agent-uploads'
+import { type ImageInput, ingestImage, ingestUploadedImage, ingestUploadedVideo, ingestVideo, removeAgentOriginals, type VideoInput } from '@/lib/social/media'
 import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
 import { MAX_MEDIA, parseCreatePost } from '@/lib/social/validation'
@@ -57,6 +57,8 @@ export async function POST(request: Request) {
   const type = body.type ?? body.media_type ?? 'image'
   if (type !== 'image' && type !== 'reel') return err(422, "type must be 'image' or 'reel'.")
   const reel = type === 'reel'
+  const conflict = conflictingMediaSources(body, reel)
+  if (conflict) return err(422, `Give only one media source; got ${conflict.join(' and ')}.`)
   const topPath = body.media_path ?? body.mediaPath
   let images: ImageInput[] = Array.isArray(body.images) ? (body.images as ImageInput[]) : []
   if (!reel && !images.length && typeof body.image_url === 'string') images = [body.image_url]
@@ -68,6 +70,11 @@ export async function POST(request: Request) {
     if (!video) return err(422, 'video (https URL, {data, contentType} or media_path) is required for reels.')
     if (images.length) return err(422, 'Reels take one video, not images (use cover for a cover image).')
   } else if (images.length < 1 || images.length > MAX_MEDIA) return err(422, `images must have 1–${MAX_MEDIA} items.`)
+  // Our own agent/ uploads must come in as media_path (ownership check), never as a URL.
+  const urlInputs: [string, unknown][] = reel ? [['video', video], ['cover', cover]] : [...images.map((im, i) => [`images[${i}]`, im] as [string, unknown]), ['cover', cover]]
+  for (const [label, input] of urlInputs) {
+    if (isOwnAgentUploadUrl(mediaUrlOf(input))) return err(422, `${label}: URLs to direct uploads are not accepted; pass the upload's media_path instead.`)
+  }
   // media_path inputs: check format and account prefix before touching storage.
   const pathCheck = (input: unknown, kind: 'image' | 'video'): MediaPathCheck | null => {
     const p = typeof input === 'object' ? mediaPathOf(input) : undefined
@@ -99,6 +106,8 @@ export async function POST(request: Request) {
   const mediaUrls: string[] = []
   let coverUrl: string | null = null
   let warnings: string[] = []
+  // Re-encoded agent/ image originals: deleted only after the post is created.
+  const originals: string[] = []
   if (reel) {
     try {
       const stored = videoCheck?.ok ? await ingestUploadedVideo(videoCheck) : await ingestVideo(video!)
@@ -109,7 +118,11 @@ export async function POST(request: Request) {
     }
     if (cover) {
       try {
-        coverUrl = (coverCheck?.ok ? await ingestUploadedImage(coverCheck) : await ingestImage(cover)).mediaUrl
+        if (coverCheck?.ok) {
+          const stored = await ingestUploadedImage(coverCheck)
+          originals.push(stored.sourcePath)
+          coverUrl = stored.mediaUrl
+        } else coverUrl = (await ingestImage(cover)).mediaUrl
       } catch (e) {
         return err(422, `cover: ${e instanceof Error ? e.message : 'invalid image'}`)
       }
@@ -118,7 +131,11 @@ export async function POST(request: Request) {
     for (const [i, image] of images.entries()) {
       const check = imageChecks[i]
       try {
-        mediaUrls.push((check?.ok ? await ingestUploadedImage(check) : await ingestImage(image)).mediaUrl)
+        if (check?.ok) {
+          const stored = await ingestUploadedImage(check)
+          originals.push(stored.sourcePath)
+          mediaUrls.push(stored.mediaUrl)
+        } else mediaUrls.push((await ingestImage(image)).mediaUrl)
       } catch (e) {
         return err(422, `images[${i}]: ${e instanceof Error ? e.message : 'invalid image'}`)
       }
@@ -128,6 +145,7 @@ export async function POST(request: Request) {
   if (!parsed.ok) return err(422, parsed.error)
   try {
     const { post, result } = await createSocialPost(parsed.value, null, { reelWaitMs: 60_000 })
+    await removeAgentOriginals(originals)
     const payload = {
       id: post.id,
       account: account.username ?? account.label,

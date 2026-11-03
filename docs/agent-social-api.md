@@ -142,7 +142,8 @@ the token in the URL authorizes exactly this one path). The URL is valid for 2 h
 
 **3. Create the post** with `media_path`. The server checks that the path is under `agent/<account_id>/` of the
 post's account (another account's upload → `403`), that the object exists (`422` if you skipped step 2), and that
-its size and content type match; videos are then validated (MP4/MOV, 3 s–15 min, video track) as above.
+its size is within the limits (videos ≤ 300 MB, images ≤ 25 MB; the declared `size_bytes` is not
+re-checked) and its content type matches the declared one; videos are then validated (MP4/MOV, 3 s–15 min, video track) as above.
 
 ```bash
 export GAVEHO_KEY="$(cat ~/.config/gaveho/social-agent-key)"
@@ -168,7 +169,21 @@ curl -sS -X POST "$GAVEHO/api/agent/social/posts" \
 
 For a large JPEG, use `content_type: "image/jpeg"` in step 1, `-H 'content-type: image/jpeg'` in step 2, and
 `"images":[{"media_path":"…"}]` (or top-level `media_path`) in step 3. Uploaded images are re-encoded to the
-usual Instagram JPEG. A reel cover can be uploaded the same way and passed as `cover_media_path`.
+usual Instagram JPEG and the original upload is then deleted. A reel cover can be uploaded the same way and passed as `cover_media_path`.
+
+Rules:
+
+- **One media source per slot.** Give exactly one of `images` / `image_url` / `media_path` (images) or
+  `video` / `video_url` / `media_path` (reels), and at most one of `cover` / `cover_url` / `cover_media_path`.
+  More than one returns `422`.
+- **Uploads are referenced by `media_path` only.** A URL (`image_url`, `video_url`, `images[]`, `cover_url`, …)
+  pointing at our own bucket's `agent/` prefix returns `422`; pass the `media_path` instead.
+- **Cleanup:** uploads under `agent/` that are older than 24 h and not used by any post (`media_urls` or
+  `cover_url`) are deleted by the `/api/internal/social-agent-cleanup` cron (hourly). Use a `media_path`
+  within 20 h of uploading it: older uploads are refused at post time (`422`), so upload again.
+- **Rate limit:** 30 signed upload URLs per API key per rolling hour, enforced atomically in the database.
+  The legacy env key counts as one key: every caller using it shares a single bucket. A `429` carries a
+  `Retry-After` equal to the seconds until the oldest upload in the window ages out. Successful responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
 
 ### URLs (`video_url`, `image_url`, `images[]`)
 
