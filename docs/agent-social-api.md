@@ -206,3 +206,37 @@ curl -s "$GAVEHO/api/agent/social/posts?status=published&account=gaveho_ai&limit
 
 Each account has an optional `caption_voice` you can edit in `/admin/social` (**set/edit voice**). The admin AI
 caption generator always writes as the account owner, using that voice.
+
+
+## TikTok
+
+TikTok accounts (connected in /admin/social, see `docs/tiktok-setup.md`) show up in `GET /api/agent/social/accounts`
+with `platform: "tiktok"`. Scoped keys work the same way: a key limited to some accounts can only post to those.
+
+- `account` may be a TikTok account. TikTok only takes videos; `type` defaults to `reel` for TikTok accounts.
+- `also_accounts` (alias `also_post_to`): up to 5 more accounts (username or id) that get the same video. Every one must
+  be allowed by the key (403 otherwise) and active. The video is ingested once; each account gets its own post.
+- `tiktok`: optional `{ privacy_level, disable_comment, disable_duet, disable_stitch, is_aigc, brand_content_toggle, brand_organic_toggle }`.
+  `privacy_level` defaults to `SELF_ONLY` and must be one the creator allows (unaudited apps: `SELF_ONLY` only).
+
+```json
+POST /api/agent/social/posts
+{
+  "account": "gaveho",
+  "type": "reel",
+  "media_path": "agent/<instagram account id>/clip.mp4",
+  "caption": "Nuevo video",
+  "mode": "publish_now",
+  "also_accounts": ["<tiktok account id>"],
+  "tiktok": { "privacy_level": "SELF_ONLY", "is_aigc": false }
+}
+```
+
+The response is unchanged for the primary `account` (same fields and HTTP status) and adds
+`platform` and `also: [{ id, account, platform, status, permalink?, media_id?, container_id?, error? }]`.
+If the same username exists on Instagram and TikTok, refer to the accounts by id.
+`media_path` must still be under `agent/<primary account id>/`.
+
+### Multi-account results
+
+With `also_account_ids`, the primary account publishes inline and extra accounts are queued (`status: "scheduled"`, published by the cron within about 15 minutes). Each entry (the primary and each item in `also`) has its own `status`. An account that failed shows `status: "error"`, `http_status` and `error`. The HTTP status is the shared status when all accounts agree, otherwise **207**.

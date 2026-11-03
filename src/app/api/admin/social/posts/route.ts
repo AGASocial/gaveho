@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { noStoreHeaders, requireAdminApi } from '@/lib/admin/auth'
 import { supabaseAdmin } from '@/lib/supabase'
-import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
+import { createSocialPosts, listSocialPosts, multiStatus, outcomeStatus, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
 import { parseCreatePost } from '@/lib/social/validation'
 
@@ -23,9 +23,14 @@ export async function POST(request: Request) {
   const parsed = parseCreatePost(await request.json().catch(() => null), socialMediaPrefix())
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 422, headers: noStoreHeaders })
   try {
-    const { post, result } = await createSocialPost(parsed.value, admin.id)
-    if (!result) return NextResponse.json({ post }, { headers: noStoreHeaders })
-    return NextResponse.json({ post: { ...post, ...result } }, { status: result.status === 'published' ? 200 : result.status === 'publishing' ? 202 : 502, headers: noStoreHeaders })
+    // Instagram publishes inline with a short reel wait; TikTok and extra accounts are queued for the cron so
+    // the request stays well inside maxDuration (no row left in 'publishing' without a container).
+    const created = await createSocialPosts(parsed.value, admin.id, { reelWaitMs: 20_000, enqueueTikTok: true })
+    // `post` stays the primary account's post (backward compatible); `posts` has one entry per account.
+    const posts = created.map((o) => (o.ok ? { ...o.post, ...(o.result ?? {}), accountId: o.accountId, ok: true } : o))
+    const first = created[0]
+    if (!first.ok && created.length === 1) return NextResponse.json({ error: first.error }, { status: first.status, headers: noStoreHeaders })
+    return NextResponse.json({ post: posts[0], posts }, { status: multiStatus(created.map((o) => outcomeStatus(o))), headers: noStoreHeaders })
   } catch (e) {
     const status = e instanceof PostError ? e.status : 500
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Could not save post.' }, { status, headers: noStoreHeaders })

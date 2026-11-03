@@ -4,7 +4,7 @@ import { findAccount } from '@/lib/social/accounts'
 import { requireAgentApi, scopeAllows } from '@/lib/social/agent-auth'
 import { checkAgentMediaPath, conflictingMediaSources, isOwnAgentUploadUrl, mediaPathOf, mediaUrlOf, type MediaPathCheck } from '@/lib/social/agent-uploads'
 import { type ImageInput, ingestImage, ingestUploadedImage, ingestUploadedVideo, ingestVideo, removeAgentOriginals, type VideoInput } from '@/lib/social/media'
-import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
+import { type AccountOutcome, createSocialPosts, listSocialPosts, multiStatus, outcomeStatus, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
 import { MAX_MEDIA, parseCreatePost } from '@/lib/social/validation'
 
@@ -42,7 +42,10 @@ export async function GET(request: Request) {
 //        type?: 'image' (default) | 'reel',
 //        images: [url | {data, contentType} | {media_path}] | image_url | media_path   (type 'image')
 //        video | video_url: url | {data, contentType} | {media_path}, or media_path,
-//        cover? | cover_url? | cover_media_path?, thumb_offset?, share_to_feed?  (type 'reel') }
+//        cover? | cover_url? | cover_media_path?, thumb_offset?, share_to_feed?  (type 'reel'),
+//        also_accounts?: [username | id]   — same video also posted to these accounts (e.g. TikTok),
+//        tiktok?: { privacy_level, disable_comment, disable_duet, disable_stitch, is_aigc, brand_content_toggle, brand_organic_toggle } }
+// TikTok accounts only take videos; `type` defaults to 'reel' when `account` is a TikTok account.
 // media_path comes from POST /api/agent/social/uploads and must be under agent/<this account id>/.
 export async function POST(request: Request) {
   const scope = await requireAgentApi(request)
@@ -54,9 +57,20 @@ export async function POST(request: Request) {
   if (!account) return err(404, 'Account not found.')
   if (!scopeAllows(scope, account.id)) return err(403, 'This API key is not allowed to post to that account.')
   if (!account.is_active) return err(422, 'Account is disabled.')
-  const type = body.type ?? body.media_type ?? 'image'
+  const alsoRaw = body.also_accounts ?? body.also_post_to ?? []
+  if (!Array.isArray(alsoRaw) || alsoRaw.length > 5 || alsoRaw.some((r) => typeof r !== 'string')) return err(422, 'also_accounts must be a list of up to 5 account usernames or ids.')
+  const alsoAccounts: NonNullable<Awaited<ReturnType<typeof findAccount>>>[] = []
+  for (const ref of alsoRaw as string[]) {
+    const extra = await findAccount(ref)
+    if (!extra) return err(404, `also_accounts: account ${ref} not found.`)
+    if (!scopeAllows(scope, extra.id)) return err(403, `also_accounts: this API key is not allowed to post to ${ref}.`)
+    if (!extra.is_active) return err(422, `also_accounts: ${ref} is disabled.`)
+    if (extra.id !== account.id && !alsoAccounts.some((a) => a.id === extra.id)) alsoAccounts.push(extra)
+  }
+  const type = body.type ?? body.media_type ?? (account.platform === 'tiktok' ? 'reel' : 'image')
   if (type !== 'image' && type !== 'reel') return err(422, "type must be 'image' or 'reel'.")
   const reel = type === 'reel'
+  if (!reel && [account, ...alsoAccounts].some((a) => a.platform === 'tiktok')) return err(422, "TikTok accounts only take videos (type 'reel').")
   const conflict = conflictingMediaSources(body, reel)
   if (conflict) return err(422, `Give only one media source; got ${conflict.join(' and ')}.`)
   const topPath = body.media_path ?? body.mediaPath
@@ -96,6 +110,8 @@ export async function POST(request: Request) {
     mediaType: type,
     thumbOffset: body.thumb_offset ?? null,
     shareToFeed: body.share_to_feed ?? true,
+    tiktok: body.tiktok ?? null,
+    alsoAccountIds: alsoAccounts.map((a) => a.id),
   }
   const prefix = socialMediaPrefix()
   // Validate everything except the media first, so bad requests do not upload anything.
@@ -106,6 +122,7 @@ export async function POST(request: Request) {
   const mediaUrls: string[] = []
   let coverUrl: string | null = null
   let warnings: string[] = []
+  let videoDuration: number | null = null
   // Re-encoded agent/ image originals: deleted only after the post is created.
   const originals: string[] = []
   if (reel) {
@@ -113,6 +130,7 @@ export async function POST(request: Request) {
       const stored = videoCheck?.ok ? await ingestUploadedVideo(videoCheck) : await ingestVideo(video!)
       mediaUrls.push(stored.mediaUrl)
       warnings = stored.info.warnings
+      videoDuration = stored.info.durationSeconds
     } catch (e) {
       return err(422, `video: ${e instanceof Error ? e.message : 'invalid video'}`)
     }
@@ -141,25 +159,44 @@ export async function POST(request: Request) {
       }
     }
   }
-  const parsed = parseCreatePost({ ...candidate, mediaUrls, coverUrl }, prefix)
+  // TikTok checks the length against the creator's max_video_post_duration_sec.
+  const tiktokInput = [account, ...alsoAccounts].some((a) => a.platform === 'tiktok') && reel && videoDuration
+    ? { ...(typeof body.tiktok === 'object' && body.tiktok ? body.tiktok : {}), video_duration_sec: videoDuration }
+    : candidate.tiktok
+  const parsed = parseCreatePost({ ...candidate, tiktok: tiktokInput, mediaUrls, coverUrl }, prefix)
   if (!parsed.ok) return err(422, parsed.error)
   try {
-    const { post, result } = await createSocialPost(parsed.value, null, { reelWaitMs: 60_000 })
+    // Extra accounts are queued for the cron (never published inline), so one request publishes inline at most once.
+    const created = await createSocialPosts(parsed.value, null, { reelWaitMs: 60_000 })
     await removeAgentOriginals(originals)
-    const payload = {
-      id: post.id,
-      account: account.username ?? account.label,
-      type: post.media_type,
-      status: result?.status ?? post.status,
-      scheduled_at: post.scheduled_at,
-      media_urls: post.media_urls,
-      ...(reel ? { cover_url: post.cover_url, thumb_offset: post.thumb_offset, share_to_feed: post.share_to_feed } : {}),
-      ...(warnings.length ? { warnings } : {}),
-      ...(result?.status === 'published' ? { permalink: result.permalink, media_id: result.mediaId } : {}),
-      ...(result?.status === 'publishing' ? { container_id: result.containerId, message: result.message } : {}),
-      ...(result?.status === 'failed' ? { error: result.error } : {}),
+    const name = (id: string) => {
+      const a = [account, ...alsoAccounts].find((x) => x.id === id)
+      return a ? (a.username ?? a.label) : id
     }
-    const status = result?.status === 'failed' ? 502 : result?.status === 'publishing' ? 202 : 201
+    const describe = (o: AccountOutcome) => {
+      if (!o.ok) return { account: name(o.accountId), account_id: o.accountId, status: 'error', http_status: o.status, error: o.error }
+      const { post, result } = o
+      return {
+        id: post.id,
+        account: name(post.account_id),
+        account_id: post.account_id,
+        platform: post.platform,
+        type: post.media_type,
+        status: result?.status ?? post.status,
+        scheduled_at: post.scheduled_at,
+        media_urls: post.media_urls,
+        ...(reel ? { cover_url: post.cover_url, thumb_offset: post.thumb_offset, share_to_feed: post.share_to_feed } : {}),
+        ...(result?.status === 'published' ? { permalink: result.permalink, media_id: result.mediaId } : {}),
+        ...(result?.status === 'publishing' ? { container_id: result.containerId, message: result.message } : {}),
+        ...(result?.status === 'scheduled' ? { message: result.message } : {}),
+        ...(result?.status === 'failed' ? { error: result.error } : {}),
+      }
+    }
+    const codes = created.map((o) => outcomeStatus(o, 201))
+    // Single account: same body and status as before. Several: 207 when outcomes differ; every entry
+    // carries its own status, so a failure on one account never hides that another was created.
+    const payload = { ...describe(created[0]), ...(warnings.length ? { warnings } : {}), ...(created.length > 1 ? { also: created.slice(1).map(describe) } : {}) }
+    const status = created.length === 1 ? codes[0] : multiStatus(codes)
     return NextResponse.json(payload, { status, headers: noStoreHeaders })
   } catch (e) {
     return err(e instanceof PostError ? e.status : 500, e instanceof Error ? e.message : 'Could not create post.')
