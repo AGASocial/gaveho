@@ -1,0 +1,79 @@
+# GAVEHO agent social API
+
+Lets AI assistants create Instagram posts without the admin UI. The API uses the same validation,
+image normalization (JPEG, ≤ 2160 px, < 4 MB) and publisher as `/admin/social`.
+
+## Auth
+
+Every request needs `Authorization: Bearer $SOCIAL_AGENT_API_KEY`.
+
+- Without the header, or with a wrong key, you get `401`.
+- If the env var isn't set on the server, you get `503`.
+
+On Gabriel's Mac the key is stored in `~/.config/gaveho/social-agent-key` (chmod 600). Never paste it in chats or commits.
+
+```bash
+export GAVEHO_KEY="$(cat ~/.config/gaveho/social-agent-key)"
+export GAVEHO=https://gaveho.com
+```
+
+## List accounts
+
+```bash
+curl -s "$GAVEHO/api/agent/social/accounts" -H "Authorization: Bearer $GAVEHO_KEY"
+```
+
+Returns `id, label, username, platform, api_host, is_active, caption_voice, ...`. Tokens are never returned.
+
+## Create a post
+
+`POST /api/agent/social/posts`
+
+| field | type | notes |
+| --- | --- | --- |
+| `account` | string | username (`gaveho_ai`, `cadenza.ops`, `@` optional), label, or account id |
+| `caption` | string | ≤ 2200 chars; required unless `mode` is `draft` |
+| `images` | array (1–10) | each item is a public `https://` URL (string or `{ "url" }`) or `{ "data": "<base64>", "contentType": "image/png" }`. 2 or more images make a carousel. |
+| `mode` | `draft` \| `schedule` \| `publish_now` | default `draft` |
+| `scheduled_at` | ISO 8601 | required for `schedule`; must be at least 1 minute in the future |
+
+```bash
+# Draft from a URL
+curl -s -X POST "$GAVEHO/api/agent/social/posts" \
+  -H "Authorization: Bearer $GAVEHO_KEY" -H 'content-type: application/json' \
+  -d '{"account":"gaveho_ai","caption":"Building in public…","images":["https://example.com/image.jpg"]}'
+
+# Schedule
+curl -s -X POST "$GAVEHO/api/agent/social/posts" \
+  -H "Authorization: Bearer $GAVEHO_KEY" -H 'content-type: application/json' \
+  -d '{"account":"cadenza.ops","caption":"…","images":["https://example.com/a.jpg","https://example.com/b.jpg"],"mode":"schedule","scheduled_at":"2026-11-05T15:00:00Z"}'
+
+# Publish now with a local file (base64)
+jq -n --arg data "$(base64 < post.png | tr -d '\n')" \
+  '{account:"gaveho_ai",caption:"…",mode:"publish_now",images:[{data:$data,contentType:"image/png"}]}' |
+curl -s -X POST "$GAVEHO/api/agent/social/posts" \
+  -H "Authorization: Bearer $GAVEHO_KEY" -H 'content-type: application/json' --data-binary @-
+```
+
+Responses:
+
+- `201`: `{ id, account, status, scheduled_at, media_urls }`. When the post is published, the response also has `permalink` and `media_id`.
+- `502`: publishing failed. The response has `status: "failed"` and `error`.
+- `422`: validation error.
+- `404`: unknown account.
+
+Vercel limits request bodies to about 4.5 MB. For large or multiple images, send URLs instead of base64.
+Scheduled posts are published by the `/api/internal/social-publisher` cron, which runs every 15 minutes.
+
+## List posts
+
+```bash
+curl -s "$GAVEHO/api/agent/social/posts?status=published&account=gaveho_ai&limit=10" -H "Authorization: Bearer $GAVEHO_KEY"
+```
+
+`status` can be one of `draft, scheduled, publishing, published, failed`. `limit` defaults to 20 (max 100).
+
+## Caption voice
+
+Each account has an optional `caption_voice` you can edit in `/admin/social` (**set/edit voice**). The admin AI
+caption generator always writes as the account owner, using that voice.

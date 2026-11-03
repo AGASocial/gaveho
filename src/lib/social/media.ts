@@ -1,0 +1,97 @@
+import { randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
+import sharp from 'sharp'
+import { supabaseAdmin } from '@/lib/supabase'
+import { SOCIAL_BUCKET } from './store'
+
+// Server-side storage + normalization for Instagram images (JPEG, ≤ 2160px, < 4 MB).
+export const MAX_SOURCE_BYTES = 25 * 1024 * 1024
+const MAX_JPEG_BYTES = 4 * 1024 * 1024
+
+export function isJpeg(bytes: Uint8Array) {
+  return bytes[0] === 0xff && bytes[1] === 0xd8
+}
+
+/** Stores an already-normalized JPEG in the public gaveho-social bucket. */
+export async function storeJpeg(bytes: Buffer) {
+  const now = new Date()
+  const mediaPath = `posts/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}.jpg`
+  const db = supabaseAdmin()
+  const { error } = await db.storage.from(SOCIAL_BUCKET).upload(mediaPath, bytes, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false })
+  if (error) {
+    console.error('[social/media] upload failed:', error.message)
+    throw new Error('Upload failed.')
+  }
+  return { mediaPath, mediaUrl: db.storage.from(SOCIAL_BUCKET).getPublicUrl(mediaPath).data.publicUrl }
+}
+
+/** Same normalization as the admin browser upload: EXIF-rotated JPEG, max 2160px, under 4 MB. */
+export async function normalizeToJpeg(input: Buffer) {
+  if (input.length > MAX_SOURCE_BYTES) throw new Error('Image must be under 25 MB.')
+  for (const [maxDim, quality] of [[2160, 90], [1800, 82], [1440, 76]] as const) {
+    let out: Buffer
+    try {
+      out = await sharp(input, { limitInputPixels: 100_000_000 })
+        .rotate()
+        .resize({ width: maxDim, height: maxDim, fit: 'inside', withoutEnlargement: true })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality, mozjpeg: true })
+        .toBuffer()
+    } catch {
+      throw new Error('Could not read the image.')
+    }
+    if (out.length < MAX_JPEG_BYTES) return out
+  }
+  throw new Error('Image is still too large after optimizing.')
+}
+
+function isBlockedHost(hostname: string) {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local') || isIP(h) !== 0
+}
+
+/** Downloads a public https image (no IP literals / local hosts), max 25 MB. */
+export async function downloadImage(rawUrl: string) {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new Error('Invalid image URL.')
+  }
+  if (url.protocol !== 'https:' || isBlockedHost(url.hostname)) throw new Error('Image URLs must be public https URLs.')
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15_000), cache: 'no-store' }).catch(() => null)
+  if (!res?.ok || !res.body) throw new Error(`Could not download image (${res?.status ?? 'network error'}).`)
+  if (res.url && isBlockedHost(new URL(res.url).hostname)) throw new Error('Image URLs must be public https URLs.')
+  if (Number(res.headers.get('content-length') ?? 0) > MAX_SOURCE_BYTES) throw new Error('Image must be under 25 MB.')
+  const chunks: Uint8Array[] = []
+  let size = 0
+  const reader = res.body.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.length
+    if (size > MAX_SOURCE_BYTES) {
+      await reader.cancel()
+      throw new Error('Image must be under 25 MB.')
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks)
+}
+
+export type ImageInput = string | { url?: unknown; data?: unknown; contentType?: unknown }
+
+/** Accepts a public https URL or base64 ({data, contentType}); returns a stored, normalized JPEG. */
+export async function ingestImage(image: ImageInput) {
+  let source: Buffer
+  if (typeof image === 'string') source = await downloadImage(image)
+  else if (image && typeof image === 'object' && typeof image.url === 'string') source = await downloadImage(image.url)
+  else if (image && typeof image === 'object' && typeof image.data === 'string') {
+    if (typeof image.contentType === 'string' && !image.contentType.startsWith('image/')) throw new Error('contentType must be an image/* type.')
+    const b64 = image.data.replace(/^data:[^;]+;base64,/, '')
+    if (b64.length > Math.ceil((MAX_SOURCE_BYTES * 4) / 3)) throw new Error('Image must be under 25 MB.')
+    source = Buffer.from(b64, 'base64')
+    if (!source.length) throw new Error('Empty image data.')
+  } else throw new Error('Each image must be an https URL or {data, contentType}.')
+  return storeJpeg(await normalizeToJpeg(source))
+}

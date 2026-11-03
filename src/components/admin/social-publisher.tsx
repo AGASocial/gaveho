@@ -16,6 +16,7 @@ type Account = {
   api_host: 'instagram' | 'facebook'
   label: string
   username: string | null
+  caption_voice: string | null
   token_expires_at: string | null
   is_active: boolean
 }
@@ -110,7 +111,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
         await fetch('/api/admin/social/caption', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mediaPath: media[0].mediaPath, hint, language }),
+          body: JSON.stringify({ mediaPath: media[0].mediaPath, hint, language, accountId }),
         })
       )
       setCaption(r.caption)
@@ -200,6 +201,22 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
       await load()
     })
 
+  const editVoice = (a: Account) => {
+    const next = prompt(`Voz para captions de IA (@${a.username ?? a.label}). Vacío = voz por defecto.`, a.caption_voice ?? '')
+    if (next === null) return
+    return run(`voice-${a.id}`, async () => {
+      await json(
+        await fetch('/api/admin/social/accounts', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: a.id, captionVoice: next }),
+        })
+      )
+      await load()
+      setMessage('Voz actualizada.')
+    })
+  }
+
   const activeAccounts = accounts.filter((a) => a.is_active)
 
   return (
@@ -231,6 +248,9 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
                   ) : null}
                   <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => toggleAccount(a)}>
                     {a.is_active ? 'disable' : 'enable'}
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => editVoice(a)} title={a.caption_voice ?? ''}>
+                    {a.caption_voice ? 'edit voice' : 'set voice'}
                   </Button>
                   <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => removeAccount(a)}>
                     remove
