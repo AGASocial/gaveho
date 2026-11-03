@@ -77,7 +77,11 @@ export async function ingestUploadedImage(check: { path: string; contentType: st
   if (obj.contentType !== check.contentType) throw new Error(`Uploaded image has content type ${obj.contentType || 'none'}; expected ${check.contentType}.`)
   const { data, error } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).download(check.path)
   if (error || !data) throw new Error(notUploaded)
-  return storeJpeg(await normalizeToJpeg(Buffer.from(await data.arrayBuffer())))
+  const stored = await storeJpeg(await normalizeToJpeg(Buffer.from(await data.arrayBuffer())))
+  // The re-encoded JPEG lives under posts/: drop the original upload (best effort; the cleanup cron is the backstop).
+  const { error: removeError } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).remove([check.path])
+  if (removeError) console.error('[agent-uploads] could not delete original upload:', removeError.message)
+  return stored
 }
 
 /** Agent upload (checked with checkAgentMediaPath) → validated in place (Range reads), no copy. */

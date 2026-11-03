@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
 import { findAccount } from '@/lib/social/accounts'
 import { requireAgentApi, scopeAllows } from '@/lib/social/agent-auth'
-import { checkAgentMediaPath, mediaPathOf, type MediaPathCheck } from '@/lib/social/agent-uploads'
+import { checkAgentMediaPath, conflictingMediaSources, isOwnAgentUploadUrl, mediaPathOf, mediaUrlOf, type MediaPathCheck } from '@/lib/social/agent-uploads'
 import { type ImageInput, ingestImage, ingestUploadedImage, ingestUploadedVideo, ingestVideo, type VideoInput } from '@/lib/social/media'
 import { createSocialPost, listSocialPosts, PostError } from '@/lib/social/posts'
 import { socialMediaPrefix } from '@/lib/social/store'
@@ -57,6 +57,8 @@ export async function POST(request: Request) {
   const type = body.type ?? body.media_type ?? 'image'
   if (type !== 'image' && type !== 'reel') return err(422, "type must be 'image' or 'reel'.")
   const reel = type === 'reel'
+  const conflict = conflictingMediaSources(body, reel)
+  if (conflict) return err(422, `Give only one media source; got ${conflict.join(' and ')}.`)
   const topPath = body.media_path ?? body.mediaPath
   let images: ImageInput[] = Array.isArray(body.images) ? (body.images as ImageInput[]) : []
   if (!reel && !images.length && typeof body.image_url === 'string') images = [body.image_url]
@@ -68,6 +70,11 @@ export async function POST(request: Request) {
     if (!video) return err(422, 'video (https URL, {data, contentType} or media_path) is required for reels.')
     if (images.length) return err(422, 'Reels take one video, not images (use cover for a cover image).')
   } else if (images.length < 1 || images.length > MAX_MEDIA) return err(422, `images must have 1–${MAX_MEDIA} items.`)
+  // Our own agent/ uploads must come in as media_path (ownership check), never as a URL.
+  const urlInputs: [string, unknown][] = reel ? [['video', video], ['cover', cover]] : [...images.map((im, i) => [`images[${i}]`, im] as [string, unknown]), ['cover', cover]]
+  for (const [label, input] of urlInputs) {
+    if (isOwnAgentUploadUrl(mediaUrlOf(input))) return err(422, `${label}: URLs to direct uploads are not accepted; pass the upload's media_path instead.`)
+  }
   // media_path inputs: check format and account prefix before touching storage.
   const pathCheck = (input: unknown, kind: 'image' | 'video'): MediaPathCheck | null => {
     const p = typeof input === 'object' ? mediaPathOf(input) : undefined
