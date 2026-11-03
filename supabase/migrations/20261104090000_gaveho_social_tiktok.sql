@@ -8,7 +8,8 @@
 alter table public.gaveho_social_accounts
   add column if not exists refresh_token_encrypted text,
   add column if not exists refresh_token_expires_at timestamptz,
-  add column if not exists token_scope text;
+  add column if not exists token_scope text,
+  add column if not exists token_refresh_locked_until timestamptz;
 
 alter table public.gaveho_social_accounts drop constraint if exists gaveho_social_accounts_api_host_check;
 alter table public.gaveho_social_accounts
@@ -63,3 +64,25 @@ as $$
 $$;
 revoke all on function public.gaveho_claim_due_social_posts(integer) from public, anon, authenticated;
 grant execute on function public.gaveho_claim_due_social_posts(integer) to service_role;
+
+-- Serializes TikTok token refreshes per account (refresh tokens rotate, so two parallel refreshes would
+-- invalidate each other). Takes a short lease; returns false if another refresh holds it.
+create or replace function public.gaveho_try_lock_social_token_refresh(p_account_id uuid, p_lease_seconds integer default 30)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  updated integer;
+begin
+  update public.gaveho_social_accounts
+  set token_refresh_locked_until = now() + make_interval(secs => greatest(5, least(p_lease_seconds, 120)))
+  where id = p_account_id
+    and (token_refresh_locked_until is null or token_refresh_locked_until < now());
+  get diagnostics updated = row_count;
+  return updated > 0;
+end;
+$$;
+revoke all on function public.gaveho_try_lock_social_token_refresh(uuid, integer) from public, anon, authenticated;
+grant execute on function public.gaveho_try_lock_social_token_refresh(uuid, integer) to service_role;

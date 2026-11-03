@@ -208,7 +208,7 @@ export function SocialPublisher({ encryptionConfigured, tiktokConfigured = false
             caption,
             mediaType: isReel ? 'reel' : 'image',
             ...(isReel && alsoIds.length ? { alsoAccountIds: alsoIds.filter((id) => id !== accountId) } : {}),
-            ...(hasTikTok ? { tiktok: { privacy_level: ttPrivacy, ...ttFlags } } : {}),
+            ...(hasTikTok ? { tiktok: { privacy_level: ttPrivacy, ...ttFlags, ...(video ? { video_duration_sec: video.info.durationSeconds } : {}) } } : {}),
             mediaUrls: isReel ? (video ? [video.mediaUrl] : []) : media.map((m) => m.mediaUrl),
             ...(isReel
               ? { coverUrl: cover?.mediaUrl ?? null, thumbOffset: thumbSeconds ? Math.round(Number(thumbSeconds) * 1000) : null, shareToFeed }

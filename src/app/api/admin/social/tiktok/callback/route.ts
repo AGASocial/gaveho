@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     const username = creator?.creator_username ?? null
     const db = supabaseAdmin()
     // open_id goes in ig_user_id so reconnecting the same TikTok user updates the existing row.
-    const { data: existing } = await db.from('gaveho_social_accounts').select('label').eq('platform', 'tiktok').eq('ig_user_id', tokens.openId).maybeSingle()
+    const { data: existing } = await db.from('gaveho_social_accounts').select('id,label').eq('platform', 'tiktok').eq('ig_user_id', tokens.openId).maybeSingle()
     const { error } = await db.from('gaveho_social_accounts').upsert(
       {
         platform: 'tiktok',
@@ -55,7 +55,8 @@ export async function GET(request: Request) {
         ig_user_id: tokens.openId,
         username,
         label: existing?.label ?? (username ? `TikTok @${username}` : user?.displayName ? `TikTok ${user.displayName}` : 'TikTok'),
-        is_active: true,
+        // A new row defaults to active; reconnecting never re-enables an account an admin disabled.
+        ...(existing ? {} : { is_active: true }),
         ...tiktokTokenColumns(tokens),
       },
       { onConflict: 'platform,ig_user_id' },

@@ -46,33 +46,56 @@ async function loadTikTokAccount(accountId: string) {
   return data
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const isFresh = (row: TikTokAccountRow) => Boolean(row.token_expires_at && new Date(row.token_expires_at).getTime() - Date.now() > REFRESH_SKEW_MS)
+const current = (row: TikTokAccountRow) => ({ token: decryptToken(row.access_token_encrypted), expiresAt: row.token_expires_at!, username: row.username })
+
 /**
- * Rotates the refresh token. Compare-and-swap on the stored (encrypted) refresh token so two concurrent
- * refreshes (cron + publish) cannot overwrite each other with a token TikTok already invalidated.
+ * Returns a usable access token, refreshing it when needed (or always, with force).
+ * TikTok rotates the refresh token on every refresh, so refreshes are serialized per account with a short
+ * lease taken through a service_role-only SECURITY DEFINER RPC (gaveho_try_lock_social_token_refresh).
+ * Whoever loses the lease waits for the winner and uses the token it stored. The final write is also a
+ * compare-and-swap on the old refresh token; on a CAS loss we re-read and use the winner's token.
  */
 export async function refreshTikTokAccount(accountId: string, force = true): Promise<{ token: string; expiresAt: string; username: string | null }> {
   const db = supabaseAdmin()
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const row = await loadTikTokAccount(accountId)
-    if (!row.is_active) throw new Error('Social account is disabled.')
-    const fresh = row.token_expires_at && new Date(row.token_expires_at).getTime() - Date.now() > REFRESH_SKEW_MS
-    if (fresh && (!force || attempt > 0)) return { token: decryptToken(row.access_token_encrypted), expiresAt: row.token_expires_at!, username: row.username }
-    if (!row.refresh_token_encrypted) throw new Error('TikTok account has no refresh token; reconnect it in /admin/social.')
-    const tokens = await refreshTikTokToken(decryptToken(row.refresh_token_encrypted)).catch((e: unknown) => {
+  const row = await loadTikTokAccount(accountId)
+  if (!row.is_active) throw new Error('Social account is disabled.')
+  if (!force && isFresh(row)) return current(row)
+  if (!row.refresh_token_encrypted) throw new Error('TikTok account has no refresh token; reconnect it in /admin/social.')
+
+  const { data: locked, error: lockError } = await db.rpc('gaveho_try_lock_social_token_refresh', { p_account_id: accountId, p_lease_seconds: 30 })
+  if (lockError) throw new Error('Could not lock the TikTok token for refresh (is the TikTok migration applied?).')
+  if (!locked) {
+    // Another request is refreshing: wait for its token.
+    for (let i = 0; i < 20; i++) {
+      await sleep(1000)
+      const again = await loadTikTokAccount(accountId)
+      if (again.refresh_token_encrypted !== row.refresh_token_encrypted && isFresh(again)) return current(again)
+    }
+    throw new Error('Timed out waiting for a concurrent TikTok token refresh.')
+  }
+  try {
+    // Re-read under the lease: a refresh may have finished between our first read and the lock.
+    const latest = await loadTikTokAccount(accountId)
+    if (latest.refresh_token_encrypted !== row.refresh_token_encrypted && isFresh(latest)) return current(latest)
+    const tokens = await refreshTikTokToken(decryptToken(latest.refresh_token_encrypted!)).catch((e: unknown) => {
       throw new Error(`TikTok token refresh failed (reconnect the account if this persists): ${e instanceof Error ? e.message : 'unknown error'}`)
     })
     const { data, error } = await db
       .from('gaveho_social_accounts')
-      .update(tiktokTokenColumns(tokens))
+      .update({ ...tiktokTokenColumns(tokens), token_refresh_locked_until: null })
       .eq('id', accountId)
-      .eq('refresh_token_encrypted', row.refresh_token_encrypted)
+      .eq('refresh_token_encrypted', latest.refresh_token_encrypted!)
       .select('id')
     if (error) throw error
-    if (data?.length) return { token: tokens.accessToken, expiresAt: tokens.expiresAt, username: row.username }
-    // Lost the race: someone else stored a newer token; reload and use it.
-    force = false
+    if (data?.length) return { token: tokens.accessToken, expiresAt: tokens.expiresAt, username: latest.username }
+    const winner = await loadTikTokAccount(accountId)
+    if (isFresh(winner)) return current(winner)
+    throw new Error('TikTok token changed during refresh; try again.')
+  } finally {
+    await db.from('gaveho_social_accounts').update({ token_refresh_locked_until: null }).eq('id', accountId)
   }
-  throw new Error('Could not refresh the TikTok token.')
 }
 
 export const getTikTokAccessToken = (accountId: string) => refreshTikTokAccount(accountId, false)

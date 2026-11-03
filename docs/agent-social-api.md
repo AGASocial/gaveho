@@ -236,3 +236,7 @@ The response is unchanged for the primary `account` (same fields and HTTP status
 `platform` and `also: [{ id, account, platform, status, permalink?, media_id?, container_id?, error? }]`.
 If the same username exists on Instagram and TikTok, refer to the accounts by id.
 `media_path` must still be under `agent/<primary account id>/`.
+
+### Multi-account results
+
+With `also_account_ids`, the primary account publishes inline and extra accounts are queued (`status: "scheduled"`, published by the cron within about 15 minutes). Each entry (the primary and each item in `also`) has its own `status`. An account that failed shows `status: "error"`, `http_status` and `error`. The HTTP status is the shared status when all accounts agree, otherwise **207**.

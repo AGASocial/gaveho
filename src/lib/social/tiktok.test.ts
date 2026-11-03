@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildAuthorizeUrl, buildPostInfo, chunkPlan, chunkRanges, parseTikTokOptions, tiktokPermalink } from './tiktok'
+import { TikTokApiError, buildAuthorizeUrl, buildPostInfo, chunkPlan, chunkRanges, isTransientTikTokError, parseTikTokOptions, tiktokPermalink } from './tiktok'
 import { parseCreatePost } from './validation'
 
 const MB = 1024 * 1024
@@ -58,4 +58,23 @@ test('parseCreatePost keeps old payloads working and parses tiktok + alsoAccount
   assert.ok(both.ok)
   if (both.ok) assert.deepEqual(both.value.alsoAccountIds, ['22222222-2222-4222-8222-222222222222'])
   assert.equal(parseCreatePost({ ...base, alsoAccountIds: ['nope'] }, prefix).ok, false)
+})
+
+test('buildPostInfo: rejects videos longer than the creator max duration', () => {
+  const c = { ...creator, max_video_post_duration_sec: 60 }
+  assert.throws(() => buildPostInfo({ caption: 'x', options: { privacy_level: 'SELF_ONLY', video_duration_sec: 75 }, creator: c }), /duration_too_long/)
+  assert.doesNotThrow(() => buildPostInfo({ caption: 'x', options: { privacy_level: 'SELF_ONLY', video_duration_sec: 60.3 }, creator: c }))
+  assert.doesNotThrow(() => buildPostInfo({ caption: 'x', options: { privacy_level: 'SELF_ONLY' }, creator: c }))
+})
+
+test('parseTikTokOptions: keeps a positive video_duration_sec', () => {
+  const r = parseTikTokOptions({ video_duration_sec: 12.5 })
+  assert.equal(r.ok && r.value?.video_duration_sec, 12.5)
+})
+
+test('isTransientTikTokError: network, 429 and 5xx are transient; API rejections are not', () => {
+  assert.equal(isTransientTikTokError(new TypeError('fetch failed')), true)
+  assert.equal(isTransientTikTokError(new TikTokApiError('rate_limit_exceeded', 'slow down', 429)), true)
+  assert.equal(isTransientTikTokError(new TikTokApiError('internal_error', 'oops', 503)), true)
+  assert.equal(isTransientTikTokError(new TikTokApiError('access_token_invalid', 'bad', 401)), false)
 })

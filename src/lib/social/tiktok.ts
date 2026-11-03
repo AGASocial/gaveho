@@ -27,6 +27,8 @@ export type TikTokOptions = {
   is_aigc?: boolean
   brand_content_toggle?: boolean
   brand_organic_toggle?: boolean
+  /** Video length (seconds), filled in server-side from the stored video; checked against max_video_post_duration_sec. */
+  video_duration_sec?: number
 }
 
 const BOOL_KEYS = ['disable_comment', 'disable_duet', 'disable_stitch', 'is_aigc', 'brand_content_toggle', 'brand_organic_toggle'] as const
@@ -49,6 +51,11 @@ export function parseTikTokOptions(raw: unknown): { ok: true; value: TikTokOptio
     if (typeof v !== 'boolean') return { ok: false, error: `tiktok.${key} must be true or false.` }
     out[key] = v
   }
+  const duration = r.video_duration_sec ?? r.videoDurationSec
+  if (duration != null) {
+    if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) return { ok: false, error: 'tiktok.video_duration_sec must be a positive number.' }
+    out.video_duration_sec = duration
+  }
   return { ok: true, value: out }
 }
 
@@ -66,7 +73,7 @@ async function api<T>(token: string, path: string, init: { method?: string; body
     method: init.method ?? 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    cache: 'no-store',
+    cache: 'no-store', redirect: 'error',
   })
   const json = (await res.json().catch(() => ({}))) as Envelope<T>
   const code = json.error?.code ?? (res.ok ? 'ok' : `http_${res.status}`)
@@ -127,7 +134,7 @@ async function tokenRequest(params: Record<string, string>): Promise<TikTokToken
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Cache-Control': 'no-cache' },
     body: new URLSearchParams({ client_key: clientKey, client_secret: clientSecret, ...params }),
-    cache: 'no-store',
+    cache: 'no-store', redirect: 'error',
   })
   const data = (await res.json().catch(() => ({}))) as TokenResponse
   if (!res.ok || data.error || !data.access_token || !data.refresh_token || !data.open_id) {
@@ -186,6 +193,10 @@ export function buildPostInfo(input: { caption: string; options: TikTokOptions |
       `privacy_level ${privacy} is not available for this creator (allowed: ${input.creator.privacy_level_options.join(', ') || 'none'}). Unaudited apps can only post SELF_ONLY.`
     )
   }
+  const max = input.creator.max_video_post_duration_sec
+  if (max && o.video_duration_sec && o.video_duration_sec > max + 0.5) {
+    throw new TikTokApiError('duration_too_long', `The video is ${Math.round(o.video_duration_sec)} s; this TikTok account can post up to ${max} s.`)
+  }
   if (o.brand_content_toggle && privacy === 'SELF_ONLY') {
     throw new TikTokApiError('invalid_param', 'Branded content (brand_content_toggle) cannot be posted with privacy_level SELF_ONLY.')
   }
@@ -233,7 +244,7 @@ export function tiktokUploadMode(): 'pull' | 'file' | 'auto' {
 }
 
 async function initFileUpload(token: string, postInfo: object, videoUrl: string) {
-  const head = await fetch(videoUrl, { method: 'HEAD', cache: 'no-store' })
+  const head = await fetch(videoUrl, { method: 'HEAD', cache: 'no-store', redirect: 'error' })
   const size = Number(head.headers.get('content-length'))
   if (!head.ok || !Number.isFinite(size) || size <= 0) throw new Error('Could not read the stored video size for TikTok upload.')
   const contentType = head.headers.get('content-type')?.startsWith('video/quicktime') ? 'video/quicktime' : 'video/mp4'
@@ -243,7 +254,7 @@ async function initFileUpload(token: string, postInfo: object, videoUrl: string)
   })
   if (!init.upload_url) throw new Error('TikTok did not return an upload_url.')
   for (const { start, end } of chunkRanges(size, plan)) {
-    const part = await fetch(videoUrl, { headers: { Range: `bytes=${start}-${end}` }, cache: 'no-store' })
+    const part = await fetch(videoUrl, { headers: { Range: `bytes=${start}-${end}` }, cache: 'no-store', redirect: 'error' })
     if (part.status !== 206 && !(part.status === 200 && start === 0 && end === size - 1)) throw new Error('Could not read the stored video for TikTok upload.')
     const bytes = new Uint8Array(await part.arrayBuffer())
     if (bytes.byteLength !== end - start + 1) throw new Error('Stored video changed while uploading to TikTok.')
@@ -251,7 +262,7 @@ async function initFileUpload(token: string, postInfo: object, videoUrl: string)
       method: 'PUT',
       headers: { 'Content-Type': contentType, 'Content-Length': String(bytes.byteLength), 'Content-Range': `bytes ${start}-${end}/${size}` },
       body: bytes,
-      cache: 'no-store',
+      cache: 'no-store', redirect: 'error',
     })
     if (put.status !== 206 && put.status !== 201 && put.status !== 200) throw new Error(`TikTok video upload failed (HTTP ${put.status}).`)
   }
@@ -287,12 +298,25 @@ export async function fetchPublishStatus(token: string, publishId: string): Prom
 export async function waitForTikTokPublish(token: string, publishId: string, budgetMs: number, intervalMs = 5000) {
   const deadline = Date.now() + budgetMs
   for (;;) {
-    const s = await fetchPublishStatus(token, publishId)
+    let s: PublishStatus
+    try {
+      s = await fetchPublishStatus(token, publishId)
+    } catch (e) {
+      // Rate limits, 5xx and network errors are not a verdict on the post: keep the publish_id and poll later.
+      if (isTransientTikTokError(e)) return { state: 'in_progress' as const, postIds: [] }
+      throw e
+    }
     if (s.status === 'PUBLISH_COMPLETE') return { state: 'complete' as const, postIds: s.postIds }
     if (s.status === 'FAILED') throw new TikTokApiError(s.failReason ?? 'failed', 'TikTok could not publish the video.')
     if (Date.now() + intervalMs > deadline) return { state: 'in_progress' as const, postIds: [] }
     await new Promise((r) => setTimeout(r, intervalMs))
   }
+}
+
+/** 429 / 5xx / network failures (anything that is not a TikTok API answer). */
+export function isTransientTikTokError(e: unknown) {
+  if (!(e instanceof TikTokApiError)) return true
+  return e.status === 429 || e.status >= 500 || e.code === 'rate_limit_exceeded' || e.code === 'internal_error'
 }
 
 export const tiktokPermalink = (username: string | null, postId: string) =>

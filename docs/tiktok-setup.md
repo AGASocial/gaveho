@@ -65,3 +65,13 @@ Apply `supabase/migrations/20261104090000_gaveho_social_tiktok.sql` **before** d
 
 Rate limits per user token: `video/init` 6/min, `status/fetch` 30/min, `creator_info` 20/min. Videos longer than the
 creator's `max_video_post_duration_sec` are rejected by TikTok (not prechecked).
+
+## Reliability notes (v2)
+
+- **Migration order:** deploy the code, then apply `20261104090000_gaveho_social_tiktok.sql`, then connect TikTok accounts. Instagram create/list/publish never reads or writes `tiktok_options`, so it keeps working before the migration is applied.
+- **Inline publishing:** admin "Publish now" publishes the primary Instagram account inline (reel wait 20 s). TikTok and every extra account are queued (`scheduled`, `scheduled_at = now()`), and the publisher cron publishes them within about 15 minutes.
+- **Stuck rows:** the publisher cron marks a post `failed` (and retryable) when it has sat in `publishing` with no container or publish_id for 15 minutes. The admin publish endpoint can also re-claim a `publishing` row after 15 minutes, and it keeps its container or publish_id so it resumes instead of posting again.
+- **Status polling:** a 429, 5xx or network error while checking status leaves the post `publishing` and keeps its publish_id. Only TikTok `FAILED` marks it failed.
+- **Token refresh:** refreshes are serialized by `gaveho_try_lock_social_token_refresh`, a SECURITY DEFINER function that only service_role can execute, with a 30 s lease. The token is then written with a compare-and-swap update. The process that loses the race re-reads the row and uses the winner's token. The daily cron refreshes only accounts whose refresh token expires within 7 days. Access tokens (about 2 h) are refreshed on demand.
+- **Duration:** when the video length is known, it is checked against the creator's `max_video_post_duration_sec`.
+- **Reconnect** never re-activates an account an admin disabled.
