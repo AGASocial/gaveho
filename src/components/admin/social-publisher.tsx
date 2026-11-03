@@ -52,6 +52,7 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
   const [posts, setPosts] = useState<Post[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [newToken, setNewToken] = useState('')
+  const [newIgId, setNewIgId] = useState('')
   const [accountId, setAccountId] = useState('')
   const [media, setMedia] = useState<Media[]>([])
   const [caption, setCaption] = useState('')
@@ -178,10 +179,11 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
         await fetch('/api/admin/social/accounts/token', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ label: newLabel, token: newToken }),
+          body: JSON.stringify({ label: newLabel, token: newToken, igUserId: newIgId }),
         })
       )
       setNewToken('')
+      setNewIgId('')
       setNewLabel('')
       await load()
       setMessage(
@@ -242,9 +244,9 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
               <p className="text-sm font-semibold">Agregar cuenta</p>
               <p className="text-xs text-muted-foreground">
                 Pega un token de acceso de Instagram (Meta → Instagram API → Generar tokens de acceso). Si la cuenta ya existe, se
-                reemplaza su token.
+                reemplaza su token. Si no se detecta la cuenta automáticamente, escribe su Instagram account ID.
               </p>
-              <div className="grid gap-2 md:grid-cols-[200px_1fr_auto] items-end">
+              <div className="grid gap-2 md:grid-cols-[180px_1fr_200px_auto] items-end">
                 <div className="space-y-1">
                   <Label htmlFor="label">Nombre (opcional)</Label>
                   <Input id="label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="GAVEHO AI" />
@@ -258,6 +260,16 @@ export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured
                     value={newToken}
                     onChange={(e) => setNewToken(e.target.value)}
                     placeholder="IG… o EA…"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="igid">Instagram account ID (opcional)</Label>
+                  <Input
+                    id="igid"
+                    inputMode="numeric"
+                    value={newIgId}
+                    onChange={(e) => setNewIgId(e.target.value.replace(/\D/g, ''))}
+                    placeholder="1784…"
                   />
                 </div>
                 <Button type="submit" disabled={busy !== null || !newToken.trim()}>

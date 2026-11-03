@@ -12,14 +12,18 @@ export async function POST(request: Request) {
   if (!process.env.SOCIAL_TOKEN_ENCRYPTION_KEY) {
     return NextResponse.json({ error: 'SOCIAL_TOKEN_ENCRYPTION_KEY is not configured.' }, { status: 500, headers: noStoreHeaders })
   }
-  const body = (await request.json().catch(() => null)) as { token?: unknown; label?: unknown } | null
+  const body = (await request.json().catch(() => null)) as { token?: unknown; label?: unknown; igUserId?: unknown } | null
   const token = typeof body?.token === 'string' ? body.token.trim() : ''
   const label = typeof body?.label === 'string' ? body.label.trim().slice(0, 80) : ''
+  const igUserId = typeof body?.igUserId === 'string' ? body.igUserId.trim() : ''
+  if (igUserId && !/^\d{5,30}$/.test(igUserId)) {
+    return NextResponse.json({ error: 'El Instagram account ID debe ser numérico.' }, { status: 422, headers: noStoreHeaders })
+  }
   if (token.length < 20 || /\s/.test(token)) return NextResponse.json({ error: 'Pega un token de acceso válido.' }, { status: 422, headers: noStoreHeaders })
 
   let accounts
   try {
-    accounts = await resolveTokenAccounts(token)
+    accounts = await resolveTokenAccounts(token, igUserId || undefined)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Token validation failed.'
     return NextResponse.json({ error: `Token inválido: ${message}` }, { status: 422, headers: noStoreHeaders })

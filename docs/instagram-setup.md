@@ -32,7 +32,9 @@ En **Casos de uso → Administrar mensajes y contenido en Instagram → API setu
 ## 5. Pegarlo en GAVEHO
 
 1. Abre <https://gaveho.com/admin/social> (sesión de admin).
-2. En **Accounts → Agregar cuenta**, escribe un nombre opcional y pega el token.
+2. En **Accounts → Agregar cuenta**, escribe un nombre opcional y pega el token. Si la cuenta no se detecta
+   automáticamente (p. ej. tokens de usuario del sistema sin página de Facebook), escribe también el
+   **Instagram account ID** (numérico, `1784…`, visible en Meta Business Suite o en la configuración de la API).
 3. GAVEHO valida el token contra Meta (`graph.instagram.com`, o `graph.facebook.com` para tokens de Facebook login),
    obtiene el usuario e ID de Instagram, y lo guarda cifrado. Si la cuenta ya existe, se reemplaza su token.
 4. Para quitar una cuenta usa **remove** (borra también sus posts guardados) o **disable** para pausarla.
