@@ -3,7 +3,7 @@ import { decryptToken, encryptToken } from './crypto'
 import { type ApiHost, publishInstagramMedia, refreshLongLivedToken } from './instagram'
 
 export const SOCIAL_BUCKET = 'gaveho-social'
-export const ACCOUNT_PUBLIC_COLUMNS = 'id,platform,api_host,label,ig_user_id,username,token_expires_at,token_refreshed_at,is_active,created_at,updated_at'
+export const ACCOUNT_PUBLIC_COLUMNS = 'id,platform,api_host,label,ig_user_id,username,caption_voice,token_expires_at,token_refreshed_at,is_active,created_at,updated_at'
 
 export function socialMediaPrefix() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')
@@ -39,7 +39,7 @@ export async function publishClaimedPost(post: { id: string; account_id: string;
       .eq('id', post.id)
       .eq('status', 'publishing')
     if (error) throw error
-    return { id: post.id, status: 'published' as const, permalink: result.permalink }
+    return { id: post.id, status: 'published' as const, permalink: result.permalink, mediaId: result.mediaId }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Publishing failed.'
     console.error('[social] publish failed', { postId: post.id, message })

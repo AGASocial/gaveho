@@ -2,6 +2,7 @@ import { generateText } from 'ai'
 import { NextResponse } from 'next/server'
 import { noStoreHeaders, requireAdminApi } from '@/lib/admin/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { buildCaptionSystemPrompt } from '@/lib/social/caption'
 import { SOCIAL_BUCKET } from '@/lib/social/store'
 
 export const maxDuration = 60
@@ -13,23 +14,27 @@ const pathRe = /^posts\/\d{4}\/\d{2}\/[0-9a-f-]+\.jpg$/
 export async function POST(request: Request) {
   const admin = await requireAdminApi()
   if (admin instanceof NextResponse) return admin
-  const body = (await request.json().catch(() => null)) as { mediaPath?: unknown; hint?: unknown; language?: unknown } | null
+  const body = (await request.json().catch(() => null)) as { mediaPath?: unknown; hint?: unknown; language?: unknown; accountId?: unknown } | null
   const mediaPath = typeof body?.mediaPath === 'string' ? body.mediaPath : ''
   if (!pathRe.test(mediaPath)) return NextResponse.json({ error: 'Invalid image.' }, { status: 422, headers: noStoreHeaders })
   const hint = typeof body?.hint === 'string' ? body.hint.slice(0, 500) : ''
   const language = body?.language === 'es' ? 'Spanish' : 'English'
-  const { data, error } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).download(mediaPath)
+  const db = supabaseAdmin()
+  const account =
+    typeof body?.accountId === 'string' && body.accountId
+      ? (await db.from('gaveho_social_accounts').select('label,username,caption_voice').eq('id', body.accountId).maybeSingle()).data
+      : null
+  const { data, error } = await db.storage.from(SOCIAL_BUCKET).download(mediaPath)
   if (error || !data) return NextResponse.json({ error: 'Could not read the image.' }, { status: 404, headers: noStoreHeaders })
   try {
     const { text } = await generateText({
       model: CAPTION_MODEL,
-      system:
-        "You write Instagram captions for Gabriel Vega (GAVEHO AI): a senior software engineer sharing practical AI, dev tooling and building-in-public content. Direct, warm, a bit playful, never corporate. Don't invent facts, numbers, dates or claims not visible in the image or the notes. Return only the final caption, no headings or quotes.",
+      system: buildCaptionSystemPrompt(account),
       messages: [
         {
           role: 'user',
           content: [
-            { type: 'text', text: `Write an Instagram caption in ${language}, 60–150 words, with a hook first line, a call to action, 1–3 emojis, and 3–6 relevant hashtags at the end.${hint ? `\nNotes from Gabriel: ${hint}` : ''}` },
+            { type: 'text', text: `Write an Instagram caption in ${language}, 60–150 words, with a hook first line, a call to action, 1–3 emojis, and 3–6 relevant hashtags at the end.${hint ? `\nNotes from the account owner: ${hint}` : ''}` },
             { type: 'file', mediaType: 'image/jpeg', data: new Uint8Array(await data.arrayBuffer()) },
           ],
         },

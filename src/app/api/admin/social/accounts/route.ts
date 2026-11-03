@@ -14,11 +14,12 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const guard = await requireAdminApi()
   if (guard instanceof NextResponse) return guard
-  const body = (await request.json().catch(() => null)) as { id?: unknown; label?: unknown; isActive?: unknown } | null
+  const body = (await request.json().catch(() => null)) as { id?: unknown; label?: unknown; isActive?: unknown; captionVoice?: unknown } | null
   if (typeof body?.id !== 'string') return NextResponse.json({ error: 'id required' }, { status: 422, headers: noStoreHeaders })
   const update: Record<string, unknown> = {}
   if (typeof body.label === 'string' && body.label.trim()) update.label = body.label.trim().slice(0, 80)
   if (typeof body.isActive === 'boolean') update.is_active = body.isActive
+  if (typeof body.captionVoice === 'string') update.caption_voice = body.captionVoice.trim().slice(0, 4000) || null
   const { data, error } = await supabaseAdmin().from('gaveho_social_accounts').update(update).eq('id', body.id).select(ACCOUNT_PUBLIC_COLUMNS).maybeSingle()
   if (error || !data) return NextResponse.json({ error: 'Could not update account.' }, { status: 500, headers: noStoreHeaders })
   return NextResponse.json({ account: data }, { headers: noStoreHeaders })
