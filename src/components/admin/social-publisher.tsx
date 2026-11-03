@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,6 +13,7 @@ import { prepareInstagramJpeg } from '@/lib/social/image-upload'
 type Account = {
   id: string
   platform: string
+  api_host: 'instagram' | 'facebook'
   label: string
   username: string | null
   token_expires_at: string | null
@@ -46,10 +47,11 @@ async function json<T>(res: Response): Promise<T> {
   return data as T
 }
 
-export function SocialPublisher({ instagramConfigured, notice }: { instagramConfigured: boolean; notice: string | null }) {
+export function SocialPublisher({ encryptionConfigured }: { encryptionConfigured: boolean }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [posts, setPosts] = useState<Post[]>([])
-  const [newLabel, setNewLabel] = useState('GAVEHO AI')
+  const [newLabel, setNewLabel] = useState('')
+  const [newToken, setNewToken] = useState('')
   const [accountId, setAccountId] = useState('')
   const [media, setMedia] = useState<Media[]>([])
   const [caption, setCaption] = useState('')
@@ -57,7 +59,7 @@ export function SocialPublisher({ instagramConfigured, notice }: { instagramConf
   const [language, setLanguage] = useState<'en' | 'es'>('en')
   const [scheduledAt, setScheduledAt] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(notice)
+  const [message, setMessage] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -169,6 +171,33 @@ export function SocialPublisher({ instagramConfigured, notice }: { instagramConf
       await load()
     })
 
+  const addAccount = (e: FormEvent) => {
+    e.preventDefault()
+    return run('add', async () => {
+      const r = await json<{ accounts: Account[]; replaced: number }>(
+        await fetch('/api/admin/social/accounts/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ label: newLabel, token: newToken }),
+        })
+      )
+      setNewToken('')
+      setNewLabel('')
+      await load()
+      setMessage(
+        `${r.replaced ? 'Token actualizado' : 'Cuenta agregada'}: ${r.accounts.map((a) => `@${a.username ?? a.label}`).join(', ')}`
+      )
+    })
+  }
+
+  const removeAccount = (a: Account) =>
+    run(`rm-${a.id}`, async () => {
+      if (!confirm(`¿Eliminar ${a.label} (@${a.username})? También se borran sus posts guardados.`)) return
+      await json(await fetch(`/api/admin/social/accounts?id=${a.id}`, { method: 'DELETE' }))
+      setAccountId((cur) => (cur === a.id ? '' : cur))
+      await load()
+    })
+
   const activeAccounts = accounts.filter((a) => a.is_active)
 
   return (
@@ -188,30 +217,58 @@ export function SocialPublisher({ instagramConfigured, notice }: { instagramConf
                 <span className="font-semibold">{a.label}</span>
                 <span className="text-muted-foreground">@{a.username}</span>
                 <span className="text-muted-foreground">
-                  token expires {a.token_expires_at ? new Date(a.token_expires_at).toLocaleDateString() : '—'}
+                  {a.api_host === 'facebook' ? 'graph.facebook.com' : 'graph.instagram.com'} · token expires{' '}
+                  {a.token_expires_at ? new Date(a.token_expires_at).toLocaleDateString() : 'never / unknown'}
                 </span>
                 {!a.is_active ? <Badge className="bg-zinc-600">disabled</Badge> : null}
                 <span className="ml-auto flex gap-2">
-                  <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => refreshToken(a.id)}>
-                    refresh token
-                  </Button>
+                  {a.api_host === 'instagram' && a.token_expires_at ? (
+                    <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => refreshToken(a.id)}>
+                      refresh token
+                    </Button>
+                  ) : null}
                   <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => toggleAccount(a)}>
                     {a.is_active ? 'disable' : 'enable'}
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => removeAccount(a)}>
+                    remove
                   </Button>
                 </span>
               </li>
             ))}
           </ul>
-          {instagramConfigured ? (
-            <form action="/api/admin/social/instagram/connect" method="get" className="flex gap-2 items-end">
-              <div className="space-y-1">
-                <Label htmlFor="label">Label</Label>
-                <Input id="label" name="label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
+          {encryptionConfigured ? (
+            <form onSubmit={addAccount} className="space-y-2 border-t border-border pt-4">
+              <p className="text-sm font-semibold">Agregar cuenta</p>
+              <p className="text-xs text-muted-foreground">
+                Pega un token de acceso de Instagram (Meta → Instagram API → Generar tokens de acceso). Si la cuenta ya existe, se
+                reemplaza su token.
+              </p>
+              <div className="grid gap-2 md:grid-cols-[200px_1fr_auto] items-end">
+                <div className="space-y-1">
+                  <Label htmlFor="label">Nombre (opcional)</Label>
+                  <Input id="label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="GAVEHO AI" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="token">Token de acceso</Label>
+                  <Input
+                    id="token"
+                    type="password"
+                    autoComplete="off"
+                    value={newToken}
+                    onChange={(e) => setNewToken(e.target.value)}
+                    placeholder="IG… o EA…"
+                  />
+                </div>
+                <Button type="submit" disabled={busy !== null || !newToken.trim()}>
+                  {busy === 'add' ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Agregar cuenta
+                </Button>
               </div>
-              <Button type="submit">Connect Instagram account</Button>
             </form>
           ) : (
-            <p className="text-sm text-yellow-500">Set INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET and NEXT_PUBLIC_SITE_URL to connect accounts.</p>
+            <p className="text-sm text-yellow-500">
+              Falta SOCIAL_TOKEN_ENCRYPTION_KEY (32 bytes en base64: openssl rand -base64 32). Configúrala en Vercel para agregar cuentas.
+            </p>
           )}
         </CardContent>
       </Card>
