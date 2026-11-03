@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { isIP } from 'node:net'
 import sharp from 'sharp'
 import { supabaseAdmin } from '@/lib/supabase'
+import { safeDownload } from './safe-fetch'
 import { SOCIAL_BUCKET } from './store'
-import { bufferReader, inspectVideo, MAX_VIDEO_BYTES, VideoError, type VideoInfo } from './video'
+import { bufferReader, httpReader, inspectVideo, MAX_VIDEO_BYTES, VideoError, type VideoInfo } from './video'
 
 // Server-side storage + normalization for Instagram images (JPEG, ≤ 2160px, < 4 MB).
 export const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -46,44 +46,53 @@ export async function normalizeToJpeg(input: Buffer) {
   throw new Error('Image is still too large after optimizing.')
 }
 
-function isBlockedHost(hostname: string) {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  return h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local') || isIP(h) !== 0
+const imageTypeOk = (t: string) => t.startsWith('image/') || t === 'application/octet-stream'
+const videoTypeOk = (t: string) => t === 'video/mp4' || t === 'video/quicktime' || t === 'application/octet-stream'
+
+/** Downloads a public https image (SSRF-guarded, see safe-fetch.ts), max 25 MB. */
+export async function downloadImage(rawUrl: string) {
+  return (await safeDownload(rawUrl, { maxBytes: MAX_SOURCE_BYTES, timeoutMs: 15_000, label: 'Image', acceptContentType: imageTypeOk })).bytes
 }
 
-/** Downloads a public https image (no IP literals / local hosts), max 25 MB. */
-export function downloadImage(rawUrl: string) {
-  return downloadPublic(rawUrl, MAX_SOURCE_BYTES, 'Image', 15_000)
+async function downloadVideo(rawUrl: string) {
+  return (await safeDownload(rawUrl, { maxBytes: MAX_VIDEO_BYTES, timeoutMs: 120_000, label: 'Video', acceptContentType: videoTypeOk })).bytes
 }
 
-async function downloadPublic(rawUrl: string, maxBytes: number, label: string, timeoutMs: number) {
-  const tooBig = `${label} must be under ${Math.round(maxBytes / 1024 / 1024)} MB.`
-  let url: URL
+/** HEADs a stored object in the public bucket: size and content type, or null when missing. */
+async function storedObject(path: string) {
+  const url = supabaseAdmin().storage.from(SOCIAL_BUCKET).getPublicUrl(path).data.publicUrl
+  const res = await fetch(url, { method: 'HEAD', cache: 'no-store' }).catch(() => null)
+  if (!res?.ok) return null
+  return { url, size: Number(res.headers.get('content-length') ?? 0), contentType: (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase() }
+}
+
+const notUploaded = 'media_path not found: PUT the file to the upload_url first.'
+
+/** Agent upload (checked with checkAgentMediaPath) → normalized JPEG stored under posts/. */
+export async function ingestUploadedImage(check: { path: string; contentType: string }) {
+  const obj = await storedObject(check.path)
+  if (!obj) throw new Error(notUploaded)
+  if (!obj.size) throw new Error('Uploaded image is empty.')
+  if (obj.size > MAX_SOURCE_BYTES) throw new Error('Image must be under 25 MB.')
+  if (obj.contentType !== check.contentType) throw new Error(`Uploaded image has content type ${obj.contentType || 'none'}; expected ${check.contentType}.`)
+  const { data, error } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).download(check.path)
+  if (error || !data) throw new Error(notUploaded)
+  return storeJpeg(await normalizeToJpeg(Buffer.from(await data.arrayBuffer())))
+}
+
+/** Agent upload (checked with checkAgentMediaPath) → validated in place (Range reads), no copy. */
+export async function ingestUploadedVideo(check: { path: string; contentType: string }): Promise<{ mediaUrl: string; mediaPath: string; info: VideoInfo }> {
+  const obj = await storedObject(check.path)
+  if (!obj) throw new Error(notUploaded)
+  if (obj.size > MAX_VIDEO_BYTES) throw new Error('Video must be 300 MB or smaller.')
+  if (obj.contentType !== check.contentType) throw new Error(`Uploaded video has content type ${obj.contentType || 'none'}; expected ${check.contentType}.`)
+  let info: VideoInfo
   try {
-    url = new URL(rawUrl)
-  } catch {
-    throw new Error(`Invalid ${label.toLowerCase()} URL.`)
+    info = await inspectVideo(await httpReader(obj.url))
+  } catch (e) {
+    throw new Error(e instanceof VideoError ? e.message : 'Could not read the uploaded video.')
   }
-  const notPublic = `${label} URLs must be public https URLs.`
-  if (url.protocol !== 'https:' || isBlockedHost(url.hostname)) throw new Error(notPublic)
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' }).catch(() => null)
-  if (!res?.ok || !res.body) throw new Error(`Could not download ${label.toLowerCase()} (${res?.status ?? 'network error'}).`)
-  if (res.url && isBlockedHost(new URL(res.url).hostname)) throw new Error(notPublic)
-  if (Number(res.headers.get('content-length') ?? 0) > maxBytes) throw new Error(tooBig)
-  const chunks: Uint8Array[] = []
-  let size = 0
-  const reader = res.body.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    if (size > maxBytes) {
-      await reader.cancel()
-      throw new Error(tooBig)
-    }
-    chunks.push(value)
-  }
-  return Buffer.concat(chunks)
+  return { mediaPath: check.path, mediaUrl: obj.url, info }
 }
 
 export type ImageInput = string | { url?: unknown; data?: unknown; contentType?: unknown }
@@ -99,7 +108,7 @@ export async function ingestImage(image: ImageInput) {
     if (b64.length > Math.ceil((MAX_SOURCE_BYTES * 4) / 3)) throw new Error('Image must be under 25 MB.')
     source = Buffer.from(b64, 'base64')
     if (!source.length) throw new Error('Empty image data.')
-  } else throw new Error('Each image must be an https URL or {data, contentType}.')
+  } else throw new Error('Each image must be an https URL, {data, contentType} or {media_path}.')
   return storeJpeg(await normalizeToJpeg(source))
 }
 
@@ -117,8 +126,8 @@ export const videoPathRe = /^reels\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.(mp4|mov)$/
 /** Accepts a public https URL or base64 ({data, contentType}); validates (no transcoding) and stores the video as-is. */
 export async function ingestVideo(video: VideoInput): Promise<{ mediaUrl: string; mediaPath: string; info: VideoInfo }> {
   let source: Buffer
-  if (typeof video === 'string') source = await downloadPublic(video, MAX_VIDEO_BYTES, 'Video', 120_000)
-  else if (video && typeof video === 'object' && typeof video.url === 'string') source = await downloadPublic(video.url, MAX_VIDEO_BYTES, 'Video', 120_000)
+  if (typeof video === 'string') source = await downloadVideo(video)
+  else if (video && typeof video === 'object' && typeof video.url === 'string') source = await downloadVideo(video.url)
   else if (video && typeof video === 'object' && typeof video.data === 'string') {
     if (typeof video.contentType === 'string' && !['video/mp4', 'video/quicktime'].includes(video.contentType)) {
       throw new Error('contentType must be video/mp4 or video/quicktime.')
