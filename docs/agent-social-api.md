@@ -178,10 +178,12 @@ Rules:
   More than one returns `422`.
 - **Uploads are referenced by `media_path` only.** A URL (`image_url`, `video_url`, `images[]`, `cover_url`, …)
   pointing at our own bucket's `agent/` prefix returns `422`; pass the `media_path` instead.
-- **Rate limit:** at most 30 upload URLs per API key per rolling hour. Over the limit, `POST /uploads` returns
-  `429` with `Retry-After`. Successful responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
 - **Cleanup:** uploads under `agent/` that are older than 24 h and not used by any post (`media_urls` or
-  `cover_url`) are deleted by the `/api/internal/social-agent-cleanup` cron (hourly).
+  `cover_url`) are deleted by the `/api/internal/social-agent-cleanup` cron (hourly). Use a `media_path`
+  within 20 h of uploading it: older uploads are refused at post time (`422`), so upload again.
+- **Rate limit:** 30 signed upload URLs per API key per rolling hour, enforced atomically in the database.
+  The legacy env key counts as one key: every caller using it shares a single bucket. A `429` carries a
+  `Retry-After` equal to the seconds until the oldest upload in the window ages out. Successful responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
 
 ### URLs (`video_url`, `image_url`, `images[]`)
 

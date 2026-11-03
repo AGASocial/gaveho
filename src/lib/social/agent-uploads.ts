@@ -80,10 +80,35 @@ export function mediaPathOf(input: unknown): unknown {
 export const AGENT_UPLOADS_PER_HOUR = 30
 export const AGENT_UPLOAD_WINDOW_MS = 3600 * 1000
 
-/** Rate-limit decision from the number of uploads the key requested in the last hour. */
-export function uploadRateLimit(recentCount: number, limit = AGENT_UPLOADS_PER_HOUR): { ok: true; remaining: number } | { ok: false; retryAfterSeconds: number } {
+/**
+ * Rate-limit decision from the number of uploads the key requested in the last hour. When blocked,
+ * Retry-After is the time until the oldest upload in the window ages out (at least 1 s).
+ */
+export function uploadRateLimit(
+  recentCount: number,
+  limit = AGENT_UPLOADS_PER_HOUR,
+  oldestInWindow: string | null = null,
+  now = Date.now()
+): { ok: true; remaining: number } | { ok: false; retryAfterSeconds: number } {
   if (recentCount < limit) return { ok: true, remaining: limit - recentCount - 1 }
-  return { ok: false, retryAfterSeconds: Math.ceil(AGENT_UPLOAD_WINDOW_MS / 1000) }
+  return { ok: false, retryAfterSeconds: retryAfterSeconds(oldestInWindow, now) }
+}
+
+/** Seconds until an upload made at `oldest` leaves the rolling window; the full window when unknown. */
+export function retryAfterSeconds(oldest: string | null, now = Date.now(), windowMs = AGENT_UPLOAD_WINDOW_MS): number {
+  const t = oldest ? Date.parse(oldest) : NaN
+  if (!Number.isFinite(t)) return Math.ceil(windowMs / 1000)
+  return Math.min(Math.ceil(windowMs / 1000), Math.max(1, Math.ceil((t + windowMs - now) / 1000)))
+}
+
+/** Uploads older than this are refused at post time: the cleanup cron deletes unreferenced ones after 24 h. */
+export const AGENT_UPLOAD_MAX_USE_AGE_MS = 20 * 3600 * 1000
+export const AGENT_UPLOAD_ORPHAN_AGE_MS = 24 * 3600 * 1000
+
+/** True when an upload stored at `storedAt` (HTTP date or ISO) is too old to attach to a new post. */
+export function uploadTooOld(storedAt: string | null | undefined, now = Date.now(), maxAgeMs = AGENT_UPLOAD_MAX_USE_AGE_MS): boolean {
+  const t = storedAt ? Date.parse(storedAt) : NaN
+  return Number.isFinite(t) && now - t > maxAgeMs
 }
 
 /**
@@ -144,12 +169,11 @@ export type StoredAgentObject = { path: string; createdAt: string | null }
  * Agent uploads safe to delete: older than `maxAgeMs` and not referenced by any post's media_urls / cover_url.
  * `referenced` holds full public URLs or bare storage paths.
  */
-export function orphanAgentObjects(objects: StoredAgentObject[], referenced: Iterable<string>, now = Date.now(), maxAgeMs = 24 * 3600 * 1000): string[] {
+export function orphanAgentObjects(objects: StoredAgentObject[], referenced: Iterable<string>, now = Date.now(), maxAgeMs = AGENT_UPLOAD_ORPHAN_AGE_MS, bucket = 'gaveho-social'): string[] {
   const refs = new Set<string>()
   for (const r of referenced) {
-    if (!r) continue
-    const i = r.indexOf('/agent/')
-    refs.add(r.startsWith('agent/') ? r : i >= 0 ? r.slice(i + 1).split('?')[0] : r)
+    const p = referencedStoragePath(r, bucket)
+    if (p) refs.add(p)
   }
   return objects
     .filter((o) => o.path.startsWith('agent/'))
@@ -159,4 +183,35 @@ export function orphanAgentObjects(objects: StoredAgentObject[], referenced: Ite
     })
     .filter((o) => !refs.has(o.path))
     .map((o) => o.path)
+}
+
+/**
+ * Storage path (inside `bucket`) of a post reference: a bare path is returned as-is; for a URL the
+ * pathname is percent-decoded and everything after the first `/<bucket>/` segment is returned.
+ * Null when it cannot be resolved.
+ */
+export function referencedStoragePath(ref: string | null | undefined, bucket = 'gaveho-social'): string | null {
+  if (!ref) return null
+  const raw = ref.trim()
+  if (!raw) return null
+  let path: string
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      path = decodeURIComponent(new URL(raw).pathname)
+    } catch {
+      return null
+    }
+  } else {
+    path = raw.split(/[?#]/)[0]
+    try {
+      path = decodeURIComponent(path)
+    } catch {
+      /* keep as-is */
+    }
+    if (!path.startsWith('/')) return path.replace(/\/{2,}/g, '/')
+  }
+  path = path.replace(/\/{2,}/g, '/')
+  const marker = `/${bucket}/`
+  const i = path.indexOf(marker)
+  return i >= 0 ? path.slice(i + marker.length) : null
 }

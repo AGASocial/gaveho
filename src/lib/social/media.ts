@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { supabaseAdmin } from '@/lib/supabase'
+import { uploadTooOld } from './agent-uploads'
 import { safeDownload } from './safe-fetch'
 import { SOCIAL_BUCKET } from './store'
 import { bufferReader, httpReader, inspectVideo, MAX_VIDEO_BYTES, VideoError, type VideoInfo } from './video'
@@ -63,31 +64,51 @@ async function storedObject(path: string) {
   const url = supabaseAdmin().storage.from(SOCIAL_BUCKET).getPublicUrl(path).data.publicUrl
   const res = await fetch(url, { method: 'HEAD', cache: 'no-store' }).catch(() => null)
   if (!res?.ok) return null
-  return { url, size: Number(res.headers.get('content-length') ?? 0), contentType: (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase() }
+  return {
+    url,
+    size: Number(res.headers.get('content-length') ?? 0),
+    contentType: (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase(),
+    lastModified: res.headers.get('last-modified'),
+  }
 }
 
 const notUploaded = 'media_path not found: PUT the file to the upload_url first.'
+const tooOld = 'media_path is older than 20 hours and may be cleaned up; upload the file again.'
 
-/** Agent upload (checked with checkAgentMediaPath) → normalized JPEG stored under posts/. */
+/**
+ * Agent upload (checked with checkAgentMediaPath) → normalized JPEG stored under posts/.
+ * The original under agent/ is NOT deleted here (retries, partial carousel failures and a path used
+ * twice need it): call removeAgentOriginals() after the post is created.
+ */
 export async function ingestUploadedImage(check: { path: string; contentType: string }) {
   const obj = await storedObject(check.path)
   if (!obj) throw new Error(notUploaded)
+  if (uploadTooOld(obj.lastModified)) throw new Error(tooOld)
   if (!obj.size) throw new Error('Uploaded image is empty.')
   if (obj.size > MAX_SOURCE_BYTES) throw new Error('Image must be under 25 MB.')
   if (obj.contentType !== check.contentType) throw new Error(`Uploaded image has content type ${obj.contentType || 'none'}; expected ${check.contentType}.`)
   const { data, error } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).download(check.path)
   if (error || !data) throw new Error(notUploaded)
-  const stored = await storeJpeg(await normalizeToJpeg(Buffer.from(await data.arrayBuffer())))
-  // The re-encoded JPEG lives under posts/: drop the original upload (best effort; the cleanup cron is the backstop).
-  const { error: removeError } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).remove([check.path])
-  if (removeError) console.error('[agent-uploads] could not delete original upload:', removeError.message)
-  return stored
+  return { ...(await storeJpeg(await normalizeToJpeg(Buffer.from(await data.arrayBuffer())))), sourcePath: check.path }
+}
+
+/** Best-effort delete of re-encoded agent/ originals once the post exists; the cleanup cron is the backstop. */
+export async function removeAgentOriginals(paths: string[]) {
+  const unique = [...new Set(paths.filter((p) => p.startsWith('agent/')))]
+  if (!unique.length) return
+  try {
+    const { error } = await supabaseAdmin().storage.from(SOCIAL_BUCKET).remove(unique)
+    if (error) console.error('[agent-uploads] could not delete original uploads:', error.message)
+  } catch (e) {
+    console.error('[agent-uploads] could not delete original uploads:', e instanceof Error ? e.message : e)
+  }
 }
 
 /** Agent upload (checked with checkAgentMediaPath) → validated in place (Range reads), no copy. */
 export async function ingestUploadedVideo(check: { path: string; contentType: string }): Promise<{ mediaUrl: string; mediaPath: string; info: VideoInfo }> {
   const obj = await storedObject(check.path)
   if (!obj) throw new Error(notUploaded)
+  if (uploadTooOld(obj.lastModified)) throw new Error(tooOld)
   if (obj.size > MAX_VIDEO_BYTES) throw new Error('Video must be 300 MB or smaller.')
   if (obj.contentType !== check.contentType) throw new Error(`Uploaded video has content type ${obj.contentType || 'none'}; expected ${check.contentType}.`)
   let info: VideoInfo

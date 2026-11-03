@@ -24,26 +24,28 @@ export async function POST(request: Request) {
   if (!scopeAllows(scope, account.id)) return err(403, 'This API key is not allowed to upload for that account.')
   if (!account.is_active) return err(422, 'Account is disabled.')
   const db = supabaseAdmin()
-  // Per-key rate limit (rolling hour), counted from the upload log. Legacy env key = key_id null.
-  const since = new Date(Date.now() - AGENT_UPLOAD_WINDOW_MS).toISOString()
-  const countQuery = db.from('gaveho_social_agent_uploads').select('id', { count: 'exact', head: true }).gte('created_at', since)
-  const { count, error: countError } = await (scope.keyId ? countQuery.eq('key_id', scope.keyId) : countQuery.is('key_id', null))
-  if (countError) {
-    console.error('[agent/uploads] rate-limit count failed:', countError.message)
+  // Atomic per-key rate limit (rolling hour): the RPC takes an advisory lock on the key, counts the
+  // window and logs this upload in one transaction. The legacy env key (key_id null) shares ONE bucket.
+  const mediaPath = newAgentUploadPath(account.id, ext)
+  const { data: reservation, error: reserveError } = await db.rpc('gaveho_social_reserve_agent_upload', {
+    p_key_id: scope.keyId,
+    p_account_id: account.id,
+    p_media_path: mediaPath,
+    p_limit: AGENT_UPLOADS_PER_HOUR,
+    p_window_seconds: AGENT_UPLOAD_WINDOW_MS / 1000,
+  })
+  const r = reservation as { ok?: boolean; count?: number; oldest?: string | null; now?: string } | null
+  if (reserveError || !r || typeof r.ok !== 'boolean') {
+    console.error('[agent/uploads] rate-limit reservation failed:', reserveError?.message ?? 'unexpected result')
     return err(503, 'Uploads are temporarily unavailable.')
   }
-  const limit = uploadRateLimit(count ?? 0)
+  const dbNow = r.now ? Date.parse(r.now) : NaN
+  const limit = r.ok ? uploadRateLimit((r.count ?? 1) - 1) : uploadRateLimit(r.count ?? AGENT_UPLOADS_PER_HOUR, AGENT_UPLOADS_PER_HOUR, r.oldest ?? null, Number.isFinite(dbNow) ? dbNow : Date.now())
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Rate limit: at most ${AGENT_UPLOADS_PER_HOUR} uploads per hour per API key.` },
       { status: 429, headers: { ...noStoreHeaders, 'retry-after': String(limit.retryAfterSeconds) } }
     )
-  }
-  const mediaPath = newAgentUploadPath(account.id, ext)
-  const { error: logError } = await db.from('gaveho_social_agent_uploads').insert({ key_id: scope.keyId, account_id: account.id, media_path: mediaPath })
-  if (logError) {
-    console.error('[agent/uploads] upload log insert failed:', logError.message)
-    return err(503, 'Uploads are temporarily unavailable.')
   }
   const { data, error } = await db.storage.from(SOCIAL_BUCKET).createSignedUploadUrl(mediaPath)
   if (error || !data) {
