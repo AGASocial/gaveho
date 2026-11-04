@@ -27,7 +27,8 @@ export async function PATCH(request: Request) {
 }
 
 // Removes an account and its posts (posts reference accounts with ON DELETE RESTRICT).
-// Best-effort afterwards: revokes the TikTok token and removes agent/<id>/ uploads (never blocks the deletion).
+// Best-effort afterwards (never blocks the deletion): attempts to revoke the TikTok token and removes
+// agent/<id>/ uploads that no remaining post references (runs after this account's posts are deleted).
 export async function DELETE(request: Request) {
   const guard = await requireAdminApi()
   if (guard instanceof NextResponse) return guard
@@ -36,12 +37,12 @@ export async function DELETE(request: Request) {
   const db = supabaseAdmin()
   const { count } = await db.from('gaveho_social_posts').select('id', { count: 'exact', head: true }).eq('account_id', id).eq('status', 'publishing')
   if (count) return NextResponse.json({ error: 'A post is publishing right now; try again in a minute.' }, { status: 409, headers: noStoreHeaders })
-  const { data: account } = await db.from('gaveho_social_accounts').select('platform,access_token_encrypted').eq('id', id).maybeSingle()
+  const { data: account } = await db.from('gaveho_social_accounts').select('platform,access_token_encrypted,refresh_token_encrypted,token_expires_at').eq('id', id).maybeSingle()
   const posts = await db.from('gaveho_social_posts').delete().eq('account_id', id)
   const { error } = posts.error ? posts : await db.from('gaveho_social_accounts').delete().eq('id', id)
   if (error) return NextResponse.json({ error: 'Could not remove account.' }, { status: 500, headers: noStoreHeaders })
   await Promise.allSettled([
-    account?.platform === 'tiktok' ? revokeTikTokToken(account.access_token_encrypted) : Promise.resolve(),
+    account?.platform === 'tiktok' ? revokeTikTokToken(account) : Promise.resolve(),
     removeAgentUploads(id),
   ])
   return NextResponse.json({ ok: true }, { headers: noStoreHeaders })

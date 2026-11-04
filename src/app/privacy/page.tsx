@@ -33,7 +33,11 @@ export default function PrivacyPage() {
       </Section>
 
       <Section title="Uploaded content">
-        <p>Videos, images and covers uploaded in GAVEHO Social are stored in a Supabase Storage bucket. Captions, schedules and publishing status are stored in a Supabase database. The storage bucket is publicly readable by URL, because Instagram and TikTok fetch media from a public URL when publishing. Anyone who has a file&apos;s URL can view it. Temporary uploads that are not used by any post are removed automatically after about 24 hours.</p>
+        <p>Videos, images and covers uploaded in GAVEHO Social are stored in a Supabase Storage bucket. Captions, schedules and publishing status are stored in a Supabase database. The storage bucket is publicly readable by URL, because Instagram and TikTok fetch media from a public URL when publishing. Anyone who has a file&apos;s URL can view it.</p>
+        <ul className={ul}>
+          <li>Images (including covers) are stored as re-encoded JPEGs under <code className="font-mono text-sm">posts/</code>, and videos uploaded in the admin under <code className="font-mono text-sm">reels/</code>. These files are <strong>not</strong> deleted automatically when a post or account is deleted. They stay in storage, still reachable by URL, until removed manually. They are removed on a deletion request.</li>
+          <li>Files uploaded through the agent API go under <code className="font-mono text-sm">agent/&lt;account id&gt;/</code>. Files no post uses are deleted automatically after about 24 hours.</li>
+        </ul>
       </Section>
 
       <Section title="Blog chat assistant">
@@ -59,7 +63,8 @@ export default function PrivacyPage() {
 
       <Section title="Retention, deletion and disconnecting">
         <ul className={ul}>
-          <li><strong>Deleting</strong> an account in GAVEHO Social removes its stored tokens and its posts from the database, removes its agent upload files from storage, and asks TikTok to revoke the access token. The revocation and file removal are done on a best-effort basis.</li>
+          <li><strong>Deleting</strong> an account in GAVEHO Social removes its stored tokens and its posts from the database. For TikTok accounts it also attempts to revoke the access token with TikTok, refreshing it first if it has expired. It then deletes the account&apos;s agent upload files that no remaining post references. Files still used by other accounts&apos; posts are kept until those posts are deleted. These steps are best-effort and never block the deletion.</li>
+          <li>Images, covers and videos stored under <code className="font-mono text-sm">posts/</code> and <code className="font-mono text-sm">reels/</code> are not deleted when an account is deleted (see Uploaded content).</li>
           <li><strong>Deactivating</strong> an account stops publishing but keeps its tokens and posts until it is deleted.</li>
           <li>Content that has already been published on TikTok or Instagram stays there. Remove it on those platforms.</li>
         </ul>
