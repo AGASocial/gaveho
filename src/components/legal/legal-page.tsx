@@ -1,6 +1,8 @@
 import Link from 'next/link'
 
 export const LEGAL_UPDATED = '2026-11-04'
+/** Placeholder contact address: change it here and it updates everywhere. */
+export const CONTACT_EMAIL = 'privacy@gaveho.com'
 export const CONTACT_URL = 'https://www.linkedin.com/in/gaveho/'
 
 export function LegalPage({
@@ -34,9 +36,9 @@ export function LegalPage({
   )
 }
 
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-3">
+    <section id={id} className="space-y-3 scroll-mt-20">
       <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
         <span className="text-emerald-600 dark:text-emerald-500 font-mono">#</span> {title}
       </h2>
@@ -45,10 +47,18 @@ export function Section({ title, children }: { title: string; children: React.Re
   )
 }
 
+export function ContactEmail() {
+  return (
+    <a href={`mailto:${CONTACT_EMAIL}`} className="text-emerald-600 dark:text-emerald-400 underline">
+      {CONTACT_EMAIL}
+    </a>
+  )
+}
+
 export function ContactLink() {
   return (
     <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer" className="text-emerald-600 dark:text-emerald-400 underline">
-      Gabriel Vega on LinkedIn
+      LinkedIn
     </a>
   )
 }

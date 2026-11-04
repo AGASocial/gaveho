@@ -1,55 +1,99 @@
 import type { Metadata } from 'next'
-import { LegalPage, Section, ContactLink } from '@/components/legal/legal-page'
+import { LegalPage, Section, ContactEmail, ContactLink } from '@/components/legal/legal-page'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
-  description: 'How gaveho.com and GAVEHO Social handle your data.',
+  description: 'How gaveho.com and GAVEHO Social handle personal data.',
 }
+
+const ul = 'list-disc pl-6 space-y-1'
 
 export default function PrivacyPage() {
   return (
     <LegalPage
       command="cat legal/privacy.md"
       title="Privacy Policy"
-      intro="gaveho.com is the personal site of Gabriel Vega (AGA Social). It hosts a blog and GAVEHO Social, an admin tool Gabriel uses to publish his own videos and images to his own Instagram and TikTok accounts. This policy explains what data that involves. Short version: very little, and it stays put."
+      intro="gaveho.com is the personal website of Gabriel Vega (AGA Social). It includes a blog, a public chat assistant on the blog, and GAVEHO Social, a private admin tool used to publish the operator's own videos and images to the operator's own Instagram and TikTok accounts. This policy describes what personal data is processed and why."
     >
-      <Section title="Who is responsible">
-        <p>The site and GAVEHO Social are operated by Gabriel Vega (AGA Social), who is the data controller for the information described here.</p>
+      <Section title="Who we are">
+        <p>gaveho.com and GAVEHO Social are operated by Gabriel Vega, who is responsible for the processing described here. Contact: <ContactEmail />.</p>
       </Section>
-      <Section title="Data we receive from TikTok and Instagram">
-        <p>When an account is connected to GAVEHO Social through TikTok Login Kit or the Instagram API, we receive only what those platforms provide for the permissions granted:</p>
-        <ul className="list-disc pl-6 space-y-1">
-          <li>Basic profile information (such as account ID, username, display name and avatar).</li>
-          <li>Access tokens and refresh tokens that allow publishing on the account&apos;s behalf.</li>
+
+      <Section title="Data received from TikTok and Instagram">
+        <p>When an account is connected to GAVEHO Social through TikTok Login Kit or the Instagram API, we receive and store:</p>
+        <ul className={ul}>
+          <li>Basic profile information: account ID, username and display name.</li>
+          <li>Access and refresh tokens, with their expiry and granted scopes. Tokens are encrypted at rest.</li>
         </ul>
-        <p>Tokens are encrypted at rest. We do not request or store your password, direct messages, followers&apos; data or analytics beyond what is needed to publish.</p>
+        <p>We do not receive or store passwords, direct messages or follower data.</p>
       </Section>
-      <Section title="Why we use it">
-        <p>Solely to publish content that the account owner has explicitly chosen to publish, and to show the connection status in the admin tool. No profiling, no advertising, no training of models on your data. The robots get nothing.</p>
+
+      <Section title="How this data is used">
+        <p>Account data is used only to publish content that the account owner has chosen to publish, to check publishing status, and to keep the connection working (token refresh). It is not used for advertising or profiling, and it is not sold.</p>
       </Section>
-      <Section title="No selling or sharing">
-        <p>We do not sell, rent or share your personal data with third parties. Data is only sent to TikTok or Meta when you publish to those platforms, and to the service providers below that run the site.</p>
+
+      <Section title="Uploaded content">
+        <p>Videos, images and covers uploaded in GAVEHO Social are stored in a Supabase Storage bucket. Captions, schedules and publishing status are stored in a Supabase database. The storage bucket is publicly readable by URL, because Instagram and TikTok fetch media from a public URL when publishing. Anyone who has a file&apos;s URL can view it. Temporary uploads that are not used by any post are removed automatically after about 24 hours.</p>
       </Section>
-      <Section title="Where data is stored">
-        <p>Data is stored in a database hosted by Supabase and the site is hosted by Vercel. These providers process data on our behalf under their own security and privacy commitments.</p>
+
+      <Section title="Blog chat assistant">
+        <p>The blog has a public chat assistant that answers questions about the blog&apos;s content. When you use it:</p>
+        <ul className={ul}>
+          <li>Your message (up to 1,000 characters) is sent to AI model providers through Vercel AI Gateway to find relevant articles and generate an answer. We do not store chat messages in our database.</li>
+          <li>Your IP address is used as a rate-limiting key and stored by Upstash (Redis). Rate-limit windows expire after about one hour, and Upstash rate-limit analytics may keep these records longer.</li>
+        </ul>
+        <p>Please do not enter personal or sensitive information in the chat.</p>
       </Section>
-      <Section title="Retention and deletion">
-        <p>We keep tokens and profile info only while the account is connected. Disconnecting an account in GAVEHO Social deletes its stored tokens. You can also request deletion of any data related to you by contacting us (see below); we will handle it within 30 days.</p>
+
+      <Section title="Service providers (processors)">
+        <p>We use these providers to run the site, and they process data on our behalf:</p>
+        <ul className={ul}>
+          <li><strong>Vercel</strong>: hosting and request logs.</li>
+          <li><strong>Supabase</strong>: database, authentication for the admin, and file storage.</li>
+          <li><strong>Vercel AI Gateway</strong>, routing to <strong>Anthropic</strong> and <strong>OpenAI</strong>: generates captions from admin-uploaded images and caption context (account label, username, caption voice and notes), and processes blog chat messages.</li>
+          <li><strong>Upstash</strong>: rate limiting for the blog chat, using visitors&apos; IP addresses.</li>
+          <li><strong>TikTok</strong> and <strong>Meta (Instagram)</strong>: receive the content you choose to publish, together with the account&apos;s access token.</li>
+        </ul>
+        <p>We do not sell personal data or share it with anyone else, except where required by law.</p>
       </Section>
-      <Section title="Revoking access">
-        <p>You can revoke GAVEHO Social&apos;s access at any time from your TikTok settings (Security and permissions → Apps and services) or your Instagram/Meta settings (Apps and websites). Once revoked, the stored tokens stop working.</p>
+
+      <Section title="Retention, deletion and disconnecting">
+        <ul className={ul}>
+          <li><strong>Deleting</strong> an account in GAVEHO Social removes its stored tokens and its posts from the database, removes its agent upload files from storage, and asks TikTok to revoke the access token. The revocation and file removal are done on a best-effort basis.</li>
+          <li><strong>Deactivating</strong> an account stops publishing but keeps its tokens and posts until it is deleted.</li>
+          <li>Content that has already been published on TikTok or Instagram stays there. Remove it on those platforms.</li>
+        </ul>
       </Section>
-      <Section title="Cookies">
-        <p>We only use cookies needed to keep the admin session signed in. No tracking or advertising cookies. Not even the chocolate-chip kind.</p>
+
+      <Section id="data-deletion" title="Data deletion instructions">
+        <p>To stop access and have your data deleted:</p>
+        <ol className="list-decimal pl-6 space-y-1">
+          <li><strong>TikTok:</strong> open TikTok, go to Settings and privacy → Security and permissions → Apps and services, and remove GAVEHO Social.</li>
+          <li><strong>Instagram:</strong> open Instagram, go to Settings → Apps and websites (or Accounts Center), and remove GAVEHO Social.</li>
+          <li><strong>And/or by email:</strong> send a deletion request to <ContactEmail /> with the subject &quot;Data deletion&quot; and your TikTok or Instagram username.</li>
+        </ol>
+        <p>Revoking access stops the tokens from working. On an email request, we will make reasonable efforts to delete the related data within 30 days and confirm by email.</p>
       </Section>
+
+      <Section title="Cookies and local storage">
+        <p>We do not use tracking or advertising cookies. We use only:</p>
+        <ul className={ul}>
+          <li>Supabase Auth session cookies, for signing in to the admin.</li>
+          <li><code className="font-mono text-sm">gaveho_tiktok_oauth_state</code>, a short-lived cookie that protects the TikTok connection flow.</li>
+          <li>A <code className="font-mono text-sm">theme</code> value in your browser&apos;s localStorage that remembers light or dark mode.</li>
+        </ul>
+      </Section>
+
       <Section title="Children">
-        <p>GAVEHO Social is not directed to children under 13 (or the minimum age in your country), and we do not knowingly collect their data.</p>
+        <p>The site is not directed to children under 13, and we do not knowingly collect their personal data.</p>
       </Section>
+
       <Section title="Changes to this policy">
-        <p>We may update this policy from time to time. Changes will be posted on this page with a new &quot;Last updated&quot; date.</p>
+        <p>We may update this policy. Changes will be posted on this page with a new &quot;Last updated&quot; date.</p>
       </Section>
+
       <Section title="Contact">
-        <p>For questions or deletion requests, contact <ContactLink />.</p>
+        <p>Email: <ContactEmail />. You can also reach Gabriel Vega on <ContactLink />.</p>
       </Section>
     </LegalPage>
   )
