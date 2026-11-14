@@ -1,7 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { agentKeyDisplayPrefix, bearerToken, generateAgentKey, hashAgentKey, looksLikeAgentKey, scopeAllows } from './agent-keys'
+import {
+  agentKeyDisplayPrefix,
+  bearerToken,
+  generateAgentKey,
+  hashAgentKey,
+  looksLikeAgentKey,
+  parseAgentPermissionScopes,
+  scopeAllows,
+  scopeHasPermission,
+} from './agent-keys'
 
 test('generates gsk_ keys with 32 random bytes, a display prefix and a SHA-256 hash', () => {
   const { key, prefix, hash } = generateAgentKey()
@@ -26,10 +35,29 @@ test('rejects malformed keys', () => {
 })
 
 test('scope checks', () => {
-  assert.ok(scopeAllows({ keyId: null, accountIds: null }, 'any'))
-  assert.ok(scopeAllows({ keyId: 'k', accountIds: ['a', 'b'] }, 'a'))
-  assert.ok(!scopeAllows({ keyId: 'k', accountIds: ['a'] }, 'b'))
-  assert.ok(!scopeAllows({ keyId: 'k', accountIds: [] }, 'a'))
+  assert.ok(scopeAllows({ keyId: null, accountIds: null, permissions: [] }, 'any'))
+  assert.ok(scopeAllows({ keyId: 'k', accountIds: ['a', 'b'], permissions: [] }, 'a'))
+  assert.ok(!scopeAllows({ keyId: 'k', accountIds: ['a'], permissions: [] }, 'b'))
+  assert.ok(!scopeAllows({ keyId: 'k', accountIds: [], permissions: [] }, 'a'))
+})
+
+test('permission scopes: blog:write implies blog:read; empty does not grant blog', () => {
+  assert.ok(scopeHasPermission({ keyId: 'k', accountIds: [], permissions: ['blog:write'] }, 'blog:write'))
+  assert.ok(scopeHasPermission({ keyId: 'k', accountIds: [], permissions: ['blog:write'] }, 'blog:read'))
+  assert.ok(scopeHasPermission({ keyId: 'k', accountIds: [], permissions: ['blog:read'] }, 'blog:read'))
+  assert.ok(!scopeHasPermission({ keyId: 'k', accountIds: [], permissions: ['blog:read'] }, 'blog:write'))
+  assert.ok(!scopeHasPermission({ keyId: 'k', accountIds: [], permissions: [] }, 'blog:write'))
+  assert.ok(!scopeHasPermission({ keyId: null, accountIds: null, permissions: [] }, 'blog:write'))
+})
+
+test('parseAgentPermissionScopes validates and dedupes', () => {
+  assert.deepEqual(parseAgentPermissionScopes(undefined), { ok: true, scopes: [] })
+  assert.deepEqual(parseAgentPermissionScopes(['blog:write', 'blog:write', 'blog:read']), {
+    ok: true,
+    scopes: ['blog:write', 'blog:read'],
+  })
+  assert.equal(parseAgentPermissionScopes(['social:write']).ok, false)
+  assert.equal(parseAgentPermissionScopes('blog:write').ok, false)
 })
 
 test('parses bearer header', () => {

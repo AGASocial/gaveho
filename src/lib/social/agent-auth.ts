@@ -1,11 +1,19 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
+import { isUndefinedColumnError } from '@/lib/supabase-errors'
 import { supabaseAdmin } from '@/lib/supabase'
-import { type AgentScope, bearerToken, hashAgentKey, looksLikeAgentKey } from './agent-keys'
+import {
+  type AgentPermissionScope,
+  type AgentScope,
+  bearerToken,
+  hashAgentKey,
+  looksLikeAgentKey,
+  scopeHasPermission,
+} from './agent-keys'
 
-export type { AgentScope } from './agent-keys'
-export { scopeAllows } from './agent-keys'
+export type { AgentPermissionScope, AgentScope } from './agent-keys'
+export { scopeAllows, scopeHasPermission } from './agent-keys'
 
 const unauthorized = () =>
   NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { ...noStoreHeaders, 'WWW-Authenticate': 'Bearer' } })
@@ -19,29 +27,70 @@ function matchesLegacyKey(supplied: string) {
   return timingSafeEqual(a, b)
 }
 
+type AgentKeyRow = {
+  id: string
+  allowed_account_ids: string[] | null
+  scopes?: string[] | null
+  revoked_at: string | null
+}
+
+/** Lookup agent key; if `scopes` column is missing, fall back and treat permissions as empty. */
+async function lookupAgentKeyByHash(keyHash: string): Promise<{ data: AgentKeyRow | null; error: { code?: string; message: string } | null }> {
+  const db = supabaseAdmin()
+  const withScopes = await db
+    .from('gaveho_social_agent_keys')
+    .select('id,allowed_account_ids,scopes,revoked_at')
+    .eq('key_hash', keyHash)
+    .maybeSingle<AgentKeyRow>()
+  if (!withScopes.error) return withScopes
+  if (!isUndefinedColumnError(withScopes.error)) return withScopes
+  console.warn('[agent-auth] scopes column missing; falling back to social-only key lookup')
+  const without = await db
+    .from('gaveho_social_agent_keys')
+    .select('id,allowed_account_ids,revoked_at')
+    .eq('key_hash', keyHash)
+    .maybeSingle<Omit<AgentKeyRow, 'scopes'>>()
+  if (without.error) return without
+  return { data: without.data ? { ...without.data, scopes: [] } : null, error: null }
+}
+
 /**
  * Agent API auth: `Authorization: Bearer <key>`.
- * - `gsk_…` keys from gaveho_social_agent_keys (hashed lookup, revocable, scoped to allowed accounts).
- * - Deprecated: `SOCIAL_AGENT_API_KEY` env var, scoped to all accounts.
+ * - `gsk_…` keys from gaveho_social_agent_keys (hashed lookup, revocable, scoped to allowed accounts + permission scopes).
+ * - Deprecated: `SOCIAL_AGENT_API_KEY` env var, scoped to all accounts (no blog permission scopes).
  * Returns the scope, or a 401/500 response.
  */
 export async function requireAgentApi(request: Request): Promise<AgentScope | NextResponse> {
   const supplied = bearerToken(request.headers.get('authorization'))
   if (!supplied) return unauthorized()
-  if (matchesLegacyKey(supplied)) return { keyId: null, accountIds: null }
+  // Legacy social env key: all accounts, no blog permissions (no key id → never owns blog posts).
+  if (matchesLegacyKey(supplied)) return { keyId: null, accountIds: null, permissions: [] }
   if (!looksLikeAgentKey(supplied)) return unauthorized()
-  const db = supabaseAdmin()
-  const { data, error } = await db
-    .from('gaveho_social_agent_keys')
-    .select('id,allowed_account_ids,revoked_at')
-    .eq('key_hash', hashAgentKey(supplied))
-    .maybeSingle<{ id: string; allowed_account_ids: string[] | null; revoked_at: string | null }>()
+  const { data, error } = await lookupAgentKeyByHash(hashAgentKey(supplied))
   if (error) {
     console.error('[agent-auth] key lookup failed:', error.message)
     return NextResponse.json({ error: 'Could not verify API key.' }, { status: 500, headers: noStoreHeaders })
   }
   if (!data || data.revoked_at) return unauthorized()
+  const db = supabaseAdmin()
   const { error: touchError } = await db.from('gaveho_social_agent_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
   if (touchError) console.error('[agent-auth] last_used_at update failed:', touchError.message)
-  return { keyId: data.id, accountIds: data.allowed_account_ids ?? [] }
+  const permissions = (data.scopes ?? []).filter((s): s is AgentPermissionScope => s === 'blog:read' || s === 'blog:write')
+  return { keyId: data.id, accountIds: data.allowed_account_ids ?? [], permissions }
+}
+
+/** Require a Bearer agent key that includes the given permission (blog:write implies blog:read). */
+export async function requireAgentPermission(
+  request: Request,
+  permission: AgentPermissionScope,
+): Promise<AgentScope | NextResponse> {
+  const scope = await requireAgentApi(request)
+  if (scope instanceof NextResponse) return scope
+  if (!scopeHasPermission(scope, permission)) {
+    return NextResponse.json(
+      { error: `This API key is missing the ${permission} scope.` },
+      { status: 403, headers: noStoreHeaders },
+    )
+  }
+  return scope
 }

@@ -13,6 +13,8 @@ export interface Post {
   tiktok_script?: string
   cover_image?: string
   language: Language
+  /** Agent key that created the post (blog agent API idempotency). */
+  agent_key_id?: string | null
 }
 
 export interface GenerateRequest {
