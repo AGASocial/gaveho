@@ -1,5 +1,4 @@
 import { revalidatePath } from 'next/cache'
-import { publishPost } from '@/lib/drafts'
 import { isUndefinedColumnError } from '@/lib/supabase-errors'
 import { supabaseAdmin } from '@/lib/supabase'
 import type { Language, Post } from '@/types'
@@ -7,6 +6,16 @@ import { blogPostPublicUrl, fingerprintsMatch, type ParsedCreateBlogPost, type P
 
 const AGENT_KEY_ID_MIGRATION_MSG =
   'Database migration required: agent_key_id column is missing on gaveho_posts. Apply migrations and retry.'
+
+export const PUBLISHED_POSTS_LOCKED_MSG = 'Published posts cannot be edited via the agent API.'
+
+type AdminClient = ReturnType<typeof supabaseAdmin>
+let getAdmin: () => AdminClient = supabaseAdmin
+
+/** Test-only: swap the Supabase admin client used by agent blog writes. */
+export function setBlogAgentAdminForTests(factory: (() => AdminClient) | null) {
+  getAdmin = factory ?? supabaseAdmin
+}
 
 export class BlogAgentError extends Error {
   constructor(
@@ -64,15 +73,22 @@ export function revalidateBlogSurfaces(slug: string) {
   revalidatePath('/feed.xml')
 }
 
+let revalidateSurfaces: (slug: string) => void = revalidateBlogSurfaces
+
+/** Test-only: stub path revalidation (next/cache is unavailable under plain node:test). */
+export function setBlogRevalidateForTests(fn: ((slug: string) => void) | null) {
+  revalidateSurfaces = fn ?? revalidateBlogSurfaces
+}
+
 export async function findPostBySlug(slug: string): Promise<BlogAgentPostRow | null> {
-  const { data, error } = await supabaseAdmin().from('gaveho_posts').select('*').eq('slug', slug).maybeSingle<BlogAgentPostRow>()
+  const { data, error } = await getAdmin().from('gaveho_posts').select('*').eq('slug', slug).maybeSingle<BlogAgentPostRow>()
   throwIfAgentKeyColumnMissing(error)
   if (error) throw new BlogAgentError('Could not look up post.', 500)
   return data
 }
 
 export async function findPostById(id: string): Promise<BlogAgentPostRow | null> {
-  const { data, error } = await supabaseAdmin().from('gaveho_posts').select('*').eq('id', id).maybeSingle<BlogAgentPostRow>()
+  const { data, error } = await getAdmin().from('gaveho_posts').select('*').eq('id', id).maybeSingle<BlogAgentPostRow>()
   throwIfAgentKeyColumnMissing(error)
   if (error) throw new BlogAgentError('Could not look up post.', 500)
   return data
@@ -110,7 +126,7 @@ export async function createAgentBlogPost(
     agent_key_id: agentKeyId,
   }
 
-  const { data, error } = await supabaseAdmin().from('gaveho_posts').insert(row).select('*').single<BlogAgentPostRow>()
+  const { data, error } = await getAdmin().from('gaveho_posts').insert(row).select('*').single<BlogAgentPostRow>()
   if (error) {
     throwIfAgentKeyColumnMissing(error)
     // Unique violation race → re-check idempotency.
@@ -125,7 +141,7 @@ export async function createAgentBlogPost(
     throw new BlogAgentError('Could not create post.', 500)
   }
 
-  if (data.published) revalidateBlogSurfaces(data.slug)
+  if (data.published) revalidateSurfaces(data.slug)
   return { post: data, created: true }
 }
 
@@ -144,28 +160,48 @@ export async function patchAgentBlogPost(
   if (patch.tags !== undefined) updates.tags = patch.tags
 
   if (Object.keys(updates).length) {
-    if (existing.published) throw new BlogAgentError('Published posts cannot be edited via the agent API.', 422)
+    // Atomic: only drafts owned by this key; concurrent publish → 0 rows → 422.
     updates.updated_at = new Date().toISOString()
-    const { data, error } = await supabaseAdmin()
+    const { data, error } = await getAdmin()
       .from('gaveho_posts')
       .update(updates)
       .eq('id', id)
       .eq('agent_key_id', agentKeyId as string)
+      .eq('published', false)
       .select('*')
-      .single<BlogAgentPostRow>()
-    if (error || !data) {
+      .maybeSingle<BlogAgentPostRow>()
+    if (error) {
       throwIfAgentKeyColumnMissing(error)
-      console.error('[agent/blog] update failed:', error?.message)
+      console.error('[agent/blog] update failed:', error.message)
       throw new BlogAgentError('Could not update post.', 500)
     }
+    if (!data) throw new BlogAgentError(PUBLISHED_POSTS_LOCKED_MSG, 422)
     Object.assign(existing, data)
   }
 
   if (patch.action === 'publish') {
     if (existing.published) return existing
-    const published = await publishPost(id)
-    revalidateBlogSurfaces(published.slug)
-    return published as BlogAgentPostRow
+    // Atomic false→true for the owning key only (idempotent if already published).
+    const { data, error } = await getAdmin()
+      .from('gaveho_posts')
+      .update({ published: true, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('agent_key_id', agentKeyId as string)
+      .eq('published', false)
+      .select('*')
+      .maybeSingle<BlogAgentPostRow>()
+    if (error) {
+      throwIfAgentKeyColumnMissing(error)
+      console.error('[agent/blog] publish failed:', error.message)
+      throw new BlogAgentError('Could not update post.', 500)
+    }
+    if (!data) {
+      const again = await findPostById(id)
+      if (again && isOwnedByAgent(again, agentKeyId) && again.published) return again
+      throw new BlogAgentError(PUBLISHED_POSTS_LOCKED_MSG, 422)
+    }
+    revalidateSurfaces(data.slug)
+    return data
   }
 
   return existing

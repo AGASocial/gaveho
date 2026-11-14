@@ -21,7 +21,7 @@ export async function GET(request: Request, ctx: Ctx) {
   if (scope instanceof NextResponse) return scope
 
   const limit = await checkBlogAgentRateLimit(scope)
-  if (!limit.ok) return err(429, limit.error, limit.headers)
+  if (!limit.ok) return err(limit.status, limit.error, limit.headers)
 
   const { id } = await ctx.params
   if (!UUID_RE.test(id)) return err(422, 'id must be a UUID.')
@@ -45,7 +45,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (scope instanceof NextResponse) return scope
 
   const limit = await checkBlogAgentRateLimit(scope)
-  if (!limit.ok) return err(429, limit.error, limit.headers)
+  if (!limit.ok) return err(limit.status, limit.error, limit.headers)
 
   const { id } = await ctx.params
   if (!UUID_RE.test(id)) return err(422, 'id must be a UUID.')

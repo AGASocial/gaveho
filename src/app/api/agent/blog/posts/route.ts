@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (scope instanceof NextResponse) return scope
 
   const limit = await checkBlogAgentRateLimit(scope)
-  if (!limit.ok) return err(429, limit.error, limit.headers)
+  if (!limit.ok) return err(limit.status, limit.error, limit.headers)
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
   if (!body || typeof body !== 'object' || Array.isArray(body)) return err(400, 'Body must be JSON.')

@@ -132,6 +132,39 @@ test('sanitizeMarkdown leaves inline code spans untouched', () => {
   assert.ok(!out.includes('&lt;script>`'))
 })
 
+test('contract: raw HTML/JSX tags only remain inside code spans/fences', () => {
+  // By design: fences/inline code keep literal tags for documentation; MDX renders them as text in <code>.
+  // Outside code, every `<` / `{` / `}` must be escaped so next-mdx-remote cannot compile them.
+  const input = `Before <script>alert(1)</script> and {evil()}
+
+Inline \`<script>inline</script>\` and \`{x}\`.
+
+\`\`\`html
+<div><script>fenced</script></div>
+{alsoFenced}
+\`\`\`
+
+After <Evil /> and {y}
+`
+  const out = sanitizeMarkdown(input)
+
+  const stripCode = (md: string) =>
+    md
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/~~~[\s\S]*?~~~/g, '')
+      .replace(/(`+)[\s\S]*?\1/g, '')
+
+  const outside = stripCode(out)
+  assert.equal(/</.test(outside), false, 'no raw < outside code')
+  assert.equal(/[{}]/.test(outside), false, 'no raw {/} outside code')
+  assert.ok(outside.includes('&lt;script'))
+  assert.ok(outside.includes('&#123;evil()&#125;'))
+
+  assert.ok(out.includes('`<script>inline</script>`'))
+  assert.ok(out.includes('<script>fenced</script>'))
+  assert.ok(out.includes('{alsoFenced}'))
+})
+
 test('escaped &lt; / &#123; are HTML entities that MDX renders as literal < / {', () => {
   // next-mdx-remote/@mdx-js decode character references in markdown text to the
   // corresponding literal characters — never as JSX tags or expressions.
