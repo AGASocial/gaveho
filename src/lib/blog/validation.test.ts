@@ -38,6 +38,19 @@ test('parseCreateBlogPost rejects bad input and oversized content', () => {
   assert.equal(parseCreateBlogPost({ title: 'x', content: 'a'.repeat(MAX_CONTENT + 1) }).ok, false)
 })
 
+test('parseCreateBlogPost rejects when final content after Fuentes exceeds MAX_CONTENT', () => {
+  // Content near the cap; Fuentes section pushes the final sanitized length over MAX_CONTENT.
+  const almost = 'a'.repeat(MAX_CONTENT - 10)
+  const over = parseCreateBlogPost({
+    title: 'Post',
+    content: almost,
+    sources: ['https://example.com/very/long/path/that/adds/fuentes/overhead'],
+  })
+  assert.equal(over.ok, false)
+  if (over.ok) return
+  assert.match(over.error, /content must be ≤/)
+})
+
 test('parseCreateBlogPost sanitizes content and appends Fuentes', () => {
   const ok = parseCreateBlogPost({
     title: 'Post',
@@ -51,10 +64,42 @@ test('parseCreateBlogPost sanitizes content and appends Fuentes', () => {
   assert.equal(ok.ok, true)
   if (!ok.ok) return
   assert.ok(!ok.value.content.includes('<script>'))
+  assert.ok(ok.value.content.includes('&lt;script>'))
   assert.match(ok.value.content, /## Fuentes/)
   assert.deepEqual(ok.value.tags, ['ai', 'ops'])
   assert.equal(ok.value.mode, 'publish_now')
   assert.equal(ok.value.language, 'en')
+})
+
+test('parseCreateBlogPost blocks adversarial XSS payloads in content/title/excerpt/sources', () => {
+  const ok = parseCreateBlogPost({
+    title: 'T {alert(1)} <img src=x>',
+    excerpt: '<img\nsrc=x\nonerror=alert(1)>',
+    content: `Body
+<img
+src=x
+onerror=alert(1)>
+{alert(1)}
+[x][r]
+
+[r]: javascript:alert(1)
+`,
+    sources: [{ title: '\n<script>alert(1)</script>', url: 'https://example.com/src' }],
+  })
+  assert.equal(ok.ok, true)
+  if (!ok.ok) return
+  assert.ok(!ok.value.content.includes('<img'))
+  assert.ok(ok.value.content.includes('&lt;img'))
+  assert.ok(ok.value.content.includes('&#123;alert(1)&#125;'))
+  assert.ok(!ok.value.content.includes('{alert(1)}'))
+  assert.ok(!ok.value.content.includes('javascript:'))
+  assert.match(ok.value.content, /\[r\]: #/)
+  assert.ok(!ok.value.content.includes('<script>'))
+  assert.ok(!ok.value.title.includes('{alert(1)}'))
+  assert.ok(ok.value.title.includes('&#123;alert(1)&#125;'))
+  assert.ok(!ok.value.excerpt.includes('<img'))
+  assert.ok(ok.value.excerpt.includes('&lt;img'))
+  assert.match(ok.value.content, /## Fuentes/)
 })
 
 test('idempotency fingerprint matches identical stored content', () => {
@@ -64,9 +109,9 @@ test('idempotency fingerprint matches identical stored content', () => {
   assert.ok(
     fingerprintsMatch(
       {
-        title: 'T',
+        title: parsed.value.title,
         content: parsed.value.content,
-        excerpt: 'E',
+        excerpt: parsed.value.excerpt,
         tags: ['a', 'b'],
         cover_image: null,
         language: 'es',
@@ -98,5 +143,6 @@ test('parsePatchBlogPost accepts publish actions and draft updates', () => {
   assert.equal(upd.value.action, 'update')
   assert.equal(upd.value.title, 'New')
   assert.ok(upd.value.content && !upd.value.content.includes('<b>'))
+  assert.ok(upd.value.content && upd.value.content.includes('&lt;b>'))
   assert.equal(parsePatchBlogPost({}).ok, false)
 })

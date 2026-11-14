@@ -1,6 +1,12 @@
 import slugify from 'slugify'
 import type { Language } from '@/types'
-import { appendFuentesSection, isHttpsUrl, sanitizeMarkdown, type SourceInput } from './sanitize'
+import {
+  appendFuentesSection,
+  isHttpsUrl,
+  isSafeHttpUrl,
+  sanitizeMarkdown,
+  type SourceInput,
+} from './sanitize'
 
 export const MAX_TITLE = 200
 export const MAX_SLUG = 120
@@ -72,29 +78,30 @@ function parseSources(value: unknown): { ok: true; sources: SourceInput[] } | { 
   const sources: SourceInput[] = []
   for (const item of value) {
     if (typeof item === 'string') {
-      if (!isHttpsUrl(item)) return { ok: false, error: 'sources URLs must be https.' }
+      if (!isSafeHttpUrl(item)) return { ok: false, error: 'sources URLs must be http(s).' }
       sources.push(item.trim())
       continue
     }
     if (item && typeof item === 'object') {
       const url = typeof (item as { url?: unknown }).url === 'string' ? (item as { url: string }).url : ''
-      if (!isHttpsUrl(url)) return { ok: false, error: 'sources[].url must be an https URL.' }
+      if (!isSafeHttpUrl(url)) return { ok: false, error: 'sources[].url must be an http(s) URL.' }
       const title = typeof (item as { title?: unknown }).title === 'string' ? (item as { title: string }).title : undefined
       sources.push({ title, url: url.trim() })
       continue
     }
-    return { ok: false, error: 'sources items must be https URLs or { title, url } objects.' }
+    return { ok: false, error: 'sources items must be http(s) URLs or { title, url } objects.' }
   }
   return { ok: true, sources }
 }
 
 export function parseCreateBlogPost(body: Record<string, unknown>): { ok: true; value: ParsedCreateBlogPost } | { ok: false; error: string } {
   if (typeof body.title !== 'string' || !body.title.trim()) return { ok: false, error: 'title is required.' }
-  const title = body.title.trim()
-  if (title.length > MAX_TITLE) return { ok: false, error: `title must be ≤ ${MAX_TITLE} characters.` }
+  const titleRaw = body.title.trim()
+  if (titleRaw.length > MAX_TITLE) return { ok: false, error: `title must be ≤ ${MAX_TITLE} characters.` }
+  const title = sanitizeMarkdown(titleRaw)
 
   if (body.slug !== undefined && body.slug !== null && typeof body.slug !== 'string') return { ok: false, error: 'slug must be a string.' }
-  const slug = makeSlug(title, typeof body.slug === 'string' ? body.slug : undefined)
+  const slug = makeSlug(titleRaw, typeof body.slug === 'string' ? body.slug : undefined)
   if (!slug) return { ok: false, error: 'slug could not be generated from title.' }
 
   if (typeof body.content !== 'string' || !body.content.trim()) return { ok: false, error: 'content is required.' }
@@ -125,8 +132,12 @@ export function parseCreateBlogPost(body: Record<string, unknown>): { ok: true; 
   const sourcesParsed = parseSources(body.sources)
   if (!sourcesParsed.ok) return sourcesParsed
 
-  const sanitized = sanitizeMarkdown(body.content)
-  const content = appendFuentesSection(sanitized, sourcesParsed.sources)
+  // Sanitize → append Fuentes → sanitize again so source titles cannot inject HTML/MDX.
+  const withFuentes = appendFuentesSection(sanitizeMarkdown(body.content), sourcesParsed.sources)
+  const content = sanitizeMarkdown(withFuentes)
+  if (content.length > MAX_CONTENT) {
+    return { ok: false, error: `content must be ≤ ${MAX_CONTENT} characters after sources are appended.` }
+  }
   const excerpt = sanitizeMarkdown(excerptRaw.trim())
 
   const value: ParsedCreateBlogPost = {
@@ -158,12 +169,16 @@ export function parsePatchBlogPost(body: Record<string, unknown>): { ok: true; v
   if (body.title !== undefined) {
     if (typeof body.title !== 'string' || !body.title.trim()) return { ok: false, error: 'title must be a non-empty string.' }
     if (body.title.trim().length > MAX_TITLE) return { ok: false, error: `title must be ≤ ${MAX_TITLE} characters.` }
-    out.title = body.title.trim()
+    out.title = sanitizeMarkdown(body.title.trim())
   }
   if (body.content !== undefined) {
     if (typeof body.content !== 'string' || !body.content.trim()) return { ok: false, error: 'content must be a non-empty string.' }
     if (body.content.length > MAX_CONTENT) return { ok: false, error: `content must be ≤ ${MAX_CONTENT} characters.` }
-    out.content = sanitizeMarkdown(body.content)
+    const content = sanitizeMarkdown(body.content)
+    if (content.length > MAX_CONTENT) {
+      return { ok: false, error: `content must be ≤ ${MAX_CONTENT} characters.` }
+    }
+    out.content = content
   }
   if (body.excerpt !== undefined) {
     if (typeof body.excerpt !== 'string') return { ok: false, error: 'excerpt must be a string.' }
