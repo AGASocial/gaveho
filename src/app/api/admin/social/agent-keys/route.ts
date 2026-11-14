@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { noStoreHeaders, requireAdminApi } from '@/lib/admin/auth'
 import { supabaseAdmin } from '@/lib/supabase'
-import { generateAgentKey } from '@/lib/social/agent-keys'
+import { generateAgentKey, parseAgentPermissionScopes } from '@/lib/social/agent-keys'
 
 export const dynamic = 'force-dynamic'
 
 // Never select key_hash into responses.
-const KEY_COLUMNS = 'id,name,key_prefix,allowed_account_ids,created_at,last_used_at,revoked_at'
+const KEY_COLUMNS = 'id,name,key_prefix,allowed_account_ids,scopes,created_at,last_used_at,revoked_at'
 const err = (status: number, error: string) => NextResponse.json({ error }, { status, headers: noStoreHeaders })
 
 export async function GET() {
@@ -17,25 +17,43 @@ export async function GET() {
   return NextResponse.json({ keys: data }, { headers: noStoreHeaders })
 }
 
-// POST { name, accountIds: string[] } → { key: {...}, plaintext } (plaintext is returned once and never stored).
+// POST { name, accountIds?: string[], scopes?: ('blog:read'|'blog:write')[] }
+// → { key: {...}, plaintext } (plaintext is returned once and never stored).
+// At least one account or one permission scope is required.
 export async function POST(request: Request) {
   const guard = await requireAdminApi()
   if (guard instanceof NextResponse) return guard
-  const body = (await request.json().catch(() => null)) as { name?: unknown; accountIds?: unknown } | null
+  const body = (await request.json().catch(() => null)) as { name?: unknown; accountIds?: unknown; scopes?: unknown } | null
   const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 80) : ''
   if (!name) return err(422, 'name is required.')
   const ids = Array.isArray(body?.accountIds) ? [...new Set(body.accountIds.filter((v): v is string => typeof v === 'string'))] : []
-  if (ids.length === 0) return err(422, 'Pick at least one account.')
+  const scopesParsed = parseAgentPermissionScopes(body?.scopes)
+  if (!scopesParsed.ok) return err(422, scopesParsed.error)
+  if (ids.length === 0 && scopesParsed.scopes.length === 0) {
+    return err(422, 'Pick at least one account or one scope (e.g. blog:write).')
+  }
   const db = supabaseAdmin()
-  const { data: accounts, error: accError } = await db.from('gaveho_social_accounts').select('id').in('id', ids)
-  if (accError || accounts?.length !== ids.length) return err(422, 'Unknown account in accountIds.')
+  if (ids.length > 0) {
+    const { data: accounts, error: accError } = await db.from('gaveho_social_accounts').select('id').in('id', ids)
+    if (accError || accounts?.length !== ids.length) return err(422, 'Unknown account in accountIds.')
+  }
   const { key, prefix, hash } = generateAgentKey()
   const { data, error } = await db
     .from('gaveho_social_agent_keys')
-    .insert({ name, key_prefix: prefix, key_hash: hash, allowed_account_ids: ids, created_by: guard.id })
+    .insert({
+      name,
+      key_prefix: prefix,
+      key_hash: hash,
+      allowed_account_ids: ids,
+      scopes: scopesParsed.scopes,
+      created_by: guard.id,
+    })
     .select(KEY_COLUMNS)
     .single()
-  if (error || !data) return err(500, 'Could not create API key.')
+  if (error || !data) {
+    console.error('[admin/agent-keys] create failed:', error?.message)
+    return err(500, 'Could not create API key.')
+  }
   return NextResponse.json({ key: data, plaintext: key }, { status: 201, headers: noStoreHeaders })
 }
 

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Copy, KeyRound } from 'lucide-react'
+import { AGENT_PERMISSION_SCOPES, type AgentPermissionScope } from '@/lib/social/agent-scopes'
 
 type Account = { id: string; label: string; username: string | null }
 type AgentKey = {
@@ -14,6 +15,7 @@ type AgentKey = {
   name: string
   key_prefix: string
   allowed_account_ids: string[]
+  scopes: AgentPermissionScope[] | null
   created_at: string
   last_used_at: string | null
   revoked_at: string | null
@@ -25,12 +27,13 @@ async function json<T>(res: Response): Promise<T> {
   return data as T
 }
 
-/** Admin management of scoped agent API keys (/api/agent/social/*). */
+/** Admin management of scoped agent API keys (/api/agent/social/* and /api/agent/blog/*). */
 export function AgentKeys() {
   const [keys, setKeys] = useState<AgentKey[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [name, setName] = useState('')
   const [selected, setSelected] = useState<string[]>([])
+  const [scopes, setScopes] = useState<AgentPermissionScope[]>([])
   const [created, setCreated] = useState<{ name: string; plaintext: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -68,13 +71,14 @@ export function AgentKeys() {
         await fetch('/api/admin/social/agent-keys', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, accountIds: selected }),
+          body: JSON.stringify({ name, accountIds: selected, scopes }),
         }),
       )
       setCreated({ name: res.key.name, plaintext: res.plaintext })
       setCopied(false)
       setName('')
       setSelected([])
+      setScopes([])
       await load()
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Could not create key.')
@@ -102,6 +106,8 @@ export function AgentKeys() {
     await navigator.clipboard.writeText(created.plaintext)
     setCopied(true)
   }
+
+  const canCreate = name.trim().length > 0 && (selected.length > 0 || scopes.length > 0)
 
   return (
     <Card className="mt-6">
@@ -135,7 +141,10 @@ export function AgentKeys() {
             <li key={k.id} className="flex flex-wrap items-center gap-3 text-sm">
               <span className="font-semibold">{k.name}</span>
               <code className="text-muted-foreground">{k.key_prefix}…</code>
-              <span className="text-muted-foreground">{k.allowed_account_ids.map(accountName).join(', ') || 'no accounts'}</span>
+              <span className="text-muted-foreground">
+                {k.allowed_account_ids.map(accountName).join(', ') || 'no accounts'}
+                {(k.scopes?.length ?? 0) > 0 ? ` · ${k.scopes!.join(', ')}` : ''}
+              </span>
               <span className="text-muted-foreground">last used {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'never'}</span>
               {k.revoked_at ? <Badge className="bg-zinc-600">revoked</Badge> : <Badge className="bg-green-600">active</Badge>}
               {!k.revoked_at ? (
@@ -153,7 +162,7 @@ export function AgentKeys() {
             <Input id="agent-key-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. cadenza agent" maxLength={80} />
           </div>
           <fieldset className="space-y-1">
-            <legend className="text-sm font-medium">Allowed accounts</legend>
+            <legend className="text-sm font-medium">Allowed accounts (social)</legend>
             {accounts.map((a) => (
               <label key={a.id} className="flex items-center gap-2 text-sm">
                 <input
@@ -165,7 +174,23 @@ export function AgentKeys() {
               </label>
             ))}
           </fieldset>
-          <Button type="submit" disabled={busy || !name.trim() || selected.length === 0}>
+          <fieldset className="space-y-1">
+            <legend className="text-sm font-medium">Permission scopes</legend>
+            {AGENT_PERMISSION_SCOPES.map((scope) => (
+              <label key={scope} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={scopes.includes(scope)}
+                  onChange={(e) => setScopes((s) => (e.target.checked ? [...s, scope] : s.filter((x) => x !== scope)))}
+                />
+                <code>{scope}</code>
+                <span className="text-muted-foreground">
+                  {scope === 'blog:write' ? 'create / publish blog posts' : 'read blog post status'}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <Button type="submit" disabled={busy || !canCreate}>
             Create key
           </Button>
         </form>

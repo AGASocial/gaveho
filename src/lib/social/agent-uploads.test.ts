@@ -73,11 +73,11 @@ test('checkAgentMediaPath rejects malformed, traversal and foreign-prefix paths 
 })
 
 test('scope + prefix: a scoped key only reaches its own accounts', () => {
-  const scoped = { keyId: 'k', accountIds: [A] }
-  const legacy = { keyId: null, accountIds: null }
+  const scoped = { keyId: 'k', accountIds: [A], permissions: [] }
+  const legacy = { keyId: null, accountIds: null, permissions: [] }
   assert.ok(scopeAllows(scoped, A))
   assert.ok(!scopeAllows(scoped, B))
-  assert.ok(!scopeAllows({ keyId: 'k', accountIds: [] }, A))
+  assert.ok(!scopeAllows({ keyId: 'k', accountIds: [], permissions: [] }, A))
   assert.ok(scopeAllows(legacy, B))
   // Even an all-accounts key can't attach account B's upload to a post for account A.
   const r = checkAgentMediaPath(newAgentUploadPath(B, 'mp4'), A, 'video')
