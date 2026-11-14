@@ -1,8 +1,12 @@
 import { revalidatePath } from 'next/cache'
 import { publishPost } from '@/lib/drafts'
+import { isUndefinedColumnError } from '@/lib/supabase-errors'
 import { supabaseAdmin } from '@/lib/supabase'
 import type { Language, Post } from '@/types'
 import { blogPostPublicUrl, fingerprintsMatch, type ParsedCreateBlogPost, type ParsedPatchBlogPost } from './validation'
+
+const AGENT_KEY_ID_MIGRATION_MSG =
+  'Database migration required: agent_key_id column is missing on gaveho_posts. Apply migrations and retry.'
 
 export class BlogAgentError extends Error {
   constructor(
@@ -41,6 +45,17 @@ export function toAgentPostResponse(post: BlogAgentPostRow, opts?: { detail?: bo
   return base
 }
 
+/** Agent API may only see/edit posts owned by the same key; NULL (human/admin) posts are never exposed. */
+export function isOwnedByAgent(post: BlogAgentPostRow, agentKeyId: string | null | undefined): boolean {
+  return agentKeyId != null && post.agent_key_id === agentKeyId
+}
+
+function throwIfAgentKeyColumnMissing(error: { code?: string; message?: string } | null | undefined): void {
+  if (error && isUndefinedColumnError(error)) {
+    throw new BlogAgentError(AGENT_KEY_ID_MIGRATION_MSG, 503)
+  }
+}
+
 /** Invalidate blog index, post page, sitemap and RSS after a publish. */
 export function revalidateBlogSurfaces(slug: string) {
   revalidatePath('/blog')
@@ -51,28 +66,33 @@ export function revalidateBlogSurfaces(slug: string) {
 
 export async function findPostBySlug(slug: string): Promise<BlogAgentPostRow | null> {
   const { data, error } = await supabaseAdmin().from('gaveho_posts').select('*').eq('slug', slug).maybeSingle<BlogAgentPostRow>()
+  throwIfAgentKeyColumnMissing(error)
   if (error) throw new BlogAgentError('Could not look up post.', 500)
   return data
 }
 
 export async function findPostById(id: string): Promise<BlogAgentPostRow | null> {
   const { data, error } = await supabaseAdmin().from('gaveho_posts').select('*').eq('id', id).maybeSingle<BlogAgentPostRow>()
+  throwIfAgentKeyColumnMissing(error)
   if (error) throw new BlogAgentError('Could not look up post.', 500)
   return data
 }
 
 /**
  * Create a blog post for an agent key, or return the existing one on idempotent retry.
- * Returns `{ post, created }`.
+ * Returns `{ post, created }`. Requires a database-backed key id (legacy env key denied).
  */
 export async function createAgentBlogPost(
   input: ParsedCreateBlogPost,
   agentKeyId: string | null,
 ): Promise<{ post: BlogAgentPostRow; created: boolean }> {
+  if (agentKeyId == null) {
+    throw new BlogAgentError('Blog posts require a database-backed API key with a key id.', 403)
+  }
+
   const existing = await findPostBySlug(input.slug)
   if (existing) {
-    const sameKey = agentKeyId != null && existing.agent_key_id === agentKeyId
-    if (sameKey && fingerprintsMatch(existing, input)) {
+    if (isOwnedByAgent(existing, agentKeyId) && fingerprintsMatch(existing, input)) {
       return { post: existing, created: false }
     }
     throw new BlogAgentError('A post with this slug already exists.', 409)
@@ -92,10 +112,11 @@ export async function createAgentBlogPost(
 
   const { data, error } = await supabaseAdmin().from('gaveho_posts').insert(row).select('*').single<BlogAgentPostRow>()
   if (error) {
+    throwIfAgentKeyColumnMissing(error)
     // Unique violation race → re-check idempotency.
     if (error.code === '23505') {
       const again = await findPostBySlug(input.slug)
-      if (again && agentKeyId != null && again.agent_key_id === agentKeyId && fingerprintsMatch(again, input)) {
+      if (again && isOwnedByAgent(again, agentKeyId) && fingerprintsMatch(again, input)) {
         return { post: again, created: false }
       }
       throw new BlogAgentError('A post with this slug already exists.', 409)
@@ -111,9 +132,10 @@ export async function createAgentBlogPost(
 export async function patchAgentBlogPost(
   id: string,
   patch: ParsedPatchBlogPost,
+  agentKeyId: string | null,
 ): Promise<BlogAgentPostRow> {
   const existing = await findPostById(id)
-  if (!existing) throw new BlogAgentError('Post not found.', 404)
+  if (!existing || !isOwnedByAgent(existing, agentKeyId)) throw new BlogAgentError('Post not found.', 404)
 
   const updates: Partial<BlogAgentPostRow> = {}
   if (patch.title !== undefined) updates.title = patch.title
@@ -128,9 +150,11 @@ export async function patchAgentBlogPost(
       .from('gaveho_posts')
       .update(updates)
       .eq('id', id)
+      .eq('agent_key_id', agentKeyId as string)
       .select('*')
       .single<BlogAgentPostRow>()
     if (error || !data) {
+      throwIfAgentKeyColumnMissing(error)
       console.error('[agent/blog] update failed:', error?.message)
       throw new BlogAgentError('Could not update post.', 500)
     }

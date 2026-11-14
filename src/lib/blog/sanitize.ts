@@ -51,18 +51,44 @@ function splitFencedCode(md: string): string[] {
   return parts
 }
 
+/** Looks like a URL/autolink candidate (scheme, path, or fragment). */
+function looksLikeAutolink(inner: string): boolean {
+  const url = inner.trim()
+  return /^(https?:|mailto:|javascript:|vbscript:|data:|\/|#)/i.test(url) || /^[a-z][a-z0-9+.-]*:/i.test(url)
+}
+
 function sanitizeOutsideCode(chunk: string): string {
   let s = chunk
-  // HTML / JSX tags (including script/style and self-closing components).
-  s = s.replace(/<\/?[A-Za-z][^>\n]*>/g, '')
-  // MDX / JSX expressions `{...}` (not inside inline code handled below naively).
-  s = s.replace(/\{[^}\n]*\}/g, '')
+  // Reference-style link definitions: [ref]: url "title" (before HTML strip).
+  s = s.replace(
+    /(^|\n)([ \t]{0,3})\[([^\]]+)\]:[ \t]+<?([^\s>]+)>?([ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*(?=\n|$)/g,
+    (_m, lead: string, indent: string, label: string, url: string, title?: string) =>
+      `${lead}${indent}[${label}]: ${neutralizeUrl(url)}${title ?? ''}`,
+  )
   // Markdown images ![alt](url)
   s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, alt: string, url: string) => `![${alt}](${neutralizeUrl(url)})`)
   // Markdown links [text](url)
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, text: string, url: string) => `[${text}](${neutralizeUrl(url)})`)
-  // Autolinks <https://…>
-  s = s.replace(/<(https?:\/\/[^>\s]+)>/gi, (_m, url: string) => (isSafeUrl(url) ? `<${url}>` : ''))
+  // Drop dangerous autolinks; park safe http(s)/mailto autolinks so the HTML strip does not eat them.
+  s = s.replace(/<((?:javascript|vbscript|data):[^>\n]*)>/gi, '')
+  const savedAutolinks: string[] = []
+  s = s.replace(/<(https?:\/\/[^>\s]+|mailto:[^>\s]+)>/gi, (_m, url: string) => {
+    if (!isSafeUrl(url)) return ''
+    const token = `\u0000AL${savedAutolinks.length}\u0000`
+    savedAutolinks.push(`<${url.trim()}>`)
+    return token
+  })
+  // Any other scheme autolink (e.g. <vbscript:…> variants, ftp:, etc.)
+  s = s.replace(/<([^>\n]+)>/g, (full, inner: string) => {
+    if (!looksLikeAutolink(inner)) return full
+    const url = inner.trim()
+    return isSafeUrl(url) ? `<${url}>` : ''
+  })
+  // HTML / JSX tags (including script/style and self-closing components).
+  s = s.replace(/<\/?[A-Za-z][^>\n]*>/g, '')
+  // MDX / JSX expressions `{...}` (not inside inline code handled below naively).
+  s = s.replace(/\{[^}\n]*\}/g, '')
+  s = s.replace(/\u0000AL(\d+)\u0000/g, (_m, i: string) => savedAutolinks[Number(i)] ?? '')
   // Bare javascript: / data: URLs left in text
   s = s.replace(/\b(?:javascript|vbscript|data):[^\s)]+/gi, '#')
   return s

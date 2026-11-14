@@ -49,6 +49,38 @@ Safe [link](https://example.com)
   assert.ok(out.includes('{alsoKept}'))
 })
 
+test('sanitizeMarkdown neutralizes reference-style link definitions', () => {
+  const input = `See [bad][ref] and [ok][safe].
+
+[ref]: javascript:alert(1)
+[evil]: data:text/html,hi
+[vbs]: vbscript:MsgBox(1)
+[safe]: https://example.com/doc
+[rel]: /blog/x
+[frag]: #section
+`
+  const out = sanitizeMarkdown(input)
+  assert.match(out, /\[ref\]: #/)
+  assert.match(out, /\[evil\]: #/)
+  assert.match(out, /\[vbs\]: #/)
+  assert.match(out, /\[safe\]: https:\/\/example\.com\/doc/)
+  assert.match(out, /\[rel\]: \/blog\/x/)
+  assert.match(out, /\[frag\]: #section/)
+  assert.ok(!out.includes('javascript:'))
+  assert.ok(!out.includes('data:text/html'))
+  assert.ok(!out.includes('vbscript:'))
+})
+
+test('sanitizeMarkdown neutralizes dangerous autolinks and keeps safe ones', () => {
+  const input = `Visit <javascript:alert(1)> and <data:text/html,hi> and <vbscript:x> vs <https://example.com> and <mailto:hi@example.com>.`
+  const out = sanitizeMarkdown(input)
+  assert.ok(!out.includes('javascript:'))
+  assert.ok(!out.includes('data:text/html'))
+  assert.ok(!out.includes('vbscript:'))
+  assert.ok(out.includes('<https://example.com>'))
+  assert.ok(out.includes('<mailto:hi@example.com>'))
+})
+
 test('appendFuentesSection appends https sources once', () => {
   const withFuentes = appendFuentesSection('Body', [
     'https://a.example/1',

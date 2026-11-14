@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
-import { BlogAgentError, findPostById, patchAgentBlogPost, toAgentPostResponse } from '@/lib/blog/agent-posts'
+import { BlogAgentError, findPostById, isOwnedByAgent, patchAgentBlogPost, toAgentPostResponse } from '@/lib/blog/agent-posts'
 import { checkBlogAgentRateLimit } from '@/lib/blog/agent-ratelimit'
 import { parsePatchBlogPost } from '@/lib/blog/validation'
 import { requireAgentPermission } from '@/lib/social/agent-auth'
@@ -15,6 +15,7 @@ const err = (status: number, error: string, headers?: Record<string, string>) =>
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET — id, slug, title, status, url, timestamps (requires blog:read or blog:write)
+// Only returns posts owned by this agent key; others (incl. human/admin NULL) → 404.
 export async function GET(request: Request, ctx: Ctx) {
   const scope = await requireAgentPermission(request, 'blog:read')
   if (scope instanceof NextResponse) return scope
@@ -27,7 +28,7 @@ export async function GET(request: Request, ctx: Ctx) {
 
   try {
     const post = await findPostById(id)
-    if (!post) return err(404, 'Post not found.')
+    if (!post || !isOwnedByAgent(post, scope.keyId)) return err(404, 'Post not found.')
     return NextResponse.json(toAgentPostResponse(post, { detail: true }), {
       headers: { ...noStoreHeaders, ...limit.headers },
     })
@@ -56,7 +57,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (!parsed.ok) return err(422, parsed.error)
 
   try {
-    const post = await patchAgentBlogPost(id, parsed.value)
+    const post = await patchAgentBlogPost(id, parsed.value, scope.keyId)
     return NextResponse.json(toAgentPostResponse(post, { detail: true }), {
       headers: { ...noStoreHeaders, ...limit.headers },
     })

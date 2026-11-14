@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { noStoreHeaders } from '@/lib/admin/auth'
+import { isUndefinedColumnError } from '@/lib/supabase-errors'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   type AgentPermissionScope,
@@ -26,6 +27,33 @@ function matchesLegacyKey(supplied: string) {
   return timingSafeEqual(a, b)
 }
 
+type AgentKeyRow = {
+  id: string
+  allowed_account_ids: string[] | null
+  scopes?: string[] | null
+  revoked_at: string | null
+}
+
+/** Lookup agent key; if `scopes` column is missing, fall back and treat permissions as empty. */
+async function lookupAgentKeyByHash(keyHash: string): Promise<{ data: AgentKeyRow | null; error: { code?: string; message: string } | null }> {
+  const db = supabaseAdmin()
+  const withScopes = await db
+    .from('gaveho_social_agent_keys')
+    .select('id,allowed_account_ids,scopes,revoked_at')
+    .eq('key_hash', keyHash)
+    .maybeSingle<AgentKeyRow>()
+  if (!withScopes.error) return withScopes
+  if (!isUndefinedColumnError(withScopes.error)) return withScopes
+  console.warn('[agent-auth] scopes column missing; falling back to social-only key lookup')
+  const without = await db
+    .from('gaveho_social_agent_keys')
+    .select('id,allowed_account_ids,revoked_at')
+    .eq('key_hash', keyHash)
+    .maybeSingle<Omit<AgentKeyRow, 'scopes'>>()
+  if (without.error) return without
+  return { data: without.data ? { ...without.data, scopes: [] } : null, error: null }
+}
+
 /**
  * Agent API auth: `Authorization: Bearer <key>`.
  * - `gsk_…` keys from gaveho_social_agent_keys (hashed lookup, revocable, scoped to allowed accounts + permission scopes).
@@ -35,20 +63,16 @@ function matchesLegacyKey(supplied: string) {
 export async function requireAgentApi(request: Request): Promise<AgentScope | NextResponse> {
   const supplied = bearerToken(request.headers.get('authorization'))
   if (!supplied) return unauthorized()
-  // Legacy social env key: all accounts, no blog permissions.
+  // Legacy social env key: all accounts, no blog permissions (no key id → never owns blog posts).
   if (matchesLegacyKey(supplied)) return { keyId: null, accountIds: null, permissions: [] }
   if (!looksLikeAgentKey(supplied)) return unauthorized()
-  const db = supabaseAdmin()
-  const { data, error } = await db
-    .from('gaveho_social_agent_keys')
-    .select('id,allowed_account_ids,scopes,revoked_at')
-    .eq('key_hash', hashAgentKey(supplied))
-    .maybeSingle<{ id: string; allowed_account_ids: string[] | null; scopes: string[] | null; revoked_at: string | null }>()
+  const { data, error } = await lookupAgentKeyByHash(hashAgentKey(supplied))
   if (error) {
     console.error('[agent-auth] key lookup failed:', error.message)
     return NextResponse.json({ error: 'Could not verify API key.' }, { status: 500, headers: noStoreHeaders })
   }
   if (!data || data.revoked_at) return unauthorized()
+  const db = supabaseAdmin()
   const { error: touchError } = await db.from('gaveho_social_agent_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
   if (touchError) console.error('[agent-auth] last_used_at update failed:', touchError.message)
   const permissions = (data.scopes ?? []).filter((s): s is AgentPermissionScope => s === 'blog:read' || s === 'blog:write')
